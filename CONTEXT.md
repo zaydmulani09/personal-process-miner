@@ -13,8 +13,8 @@ Privacy-first, local-only desktop app that watches repetitive computer workflows
 | Language | TypeScript | 5 |
 | Bundler | Vite | 6 |
 | Rust | rustc | 1.95.0 (MSVC toolchain) |
+| IPC daemon | Python | 3.11.9 (via `py` launcher) |
 | DB (planned) | SQLite via better-sqlite3 | later |
-| Automation sidecar (planned) | Python | later |
 
 ## File Tree
 
@@ -22,6 +22,12 @@ Privacy-first, local-only desktop app that watches repetitive computer workflows
 personal-process-miner/
 ├── .cargo/
 │   └── config.toml        # MSVC linker path override
+├── sidecar/
+│   ├── __init__.py
+│   ├── main.py            # stdin/stdout JSON IPC daemon
+│   ├── requirements.txt   # stdlib only
+│   ├── sidecar.log        # runtime log (gitignored)
+│   └── test_ipc.py        # standalone IPC smoke-test
 ├── src/
 │   ├── App.tsx
 │   ├── App.css
@@ -31,7 +37,7 @@ personal-process-miner/
 │       └── Dashboard.tsx
 ├── src-tauri/
 │   ├── src/
-│   │   ├── lib.rs
+│   │   ├── lib.rs         # sidecar spawn + shutdown logic
 │   │   └── main.rs
 │   ├── capabilities/
 │   │   └── default.json
@@ -57,7 +63,7 @@ personal-process-miner/
 | Prompt | Description | Status |
 |--------|-------------|--------|
 | P1 | Tauri + React scaffold & GitHub repo init | complete |
-| P2 | | pending |
+| P2 | Python sidecar IPC daemon | complete |
 | P3 | | pending |
 | P4 | | pending |
 | P5 | | pending |
@@ -81,7 +87,7 @@ personal-process-miner/
 
 ## Test Count
 
-0
+1 (sidecar/test_ipc.py — standalone IPC smoke-test)
 
 ## Known Issues
 
@@ -92,3 +98,5 @@ None.
 - **Rust toolchain**: Default system toolchain was `x86_64-pc-windows-gnu` (missing `dlltool.exe`). Switched to `x86_64-pc-windows-msvc` via `rustup override`. VS Build Tools 2022 installed via winget.
 - **MSVC linker PATH conflict**: Git's `link.exe` shadowed MSVC's. Fixed via `.cargo/config.toml` with explicit linker path.
 - **Build verification**: Used `npm run tauri build -- --no-bundle` (release build) instead of `tauri dev` to confirm compilation. Dev mode requires opening a window interactively.
+- **externalBin omitted**: Tauri's `bundle.externalBin` requires the compiled binary (e.g., `main-x86_64-pc-windows-msvc.exe`) to exist at build time. Since Python is not yet compiled via PyInstaller, `externalBin` is deferred to a later prompt. Rust spawns `py sidecar/main.py` directly via `tauri-plugin-shell` instead of `Command::new_sidecar`.
+- **Python command**: System `python` alias points to Windows Store stub. Using `py` launcher (Python 3.11.9 via Python Launcher for Windows).
