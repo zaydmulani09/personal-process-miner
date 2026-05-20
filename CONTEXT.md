@@ -74,7 +74,8 @@ personal-process-miner/
 │   │   └── ScriptPreviewModal.tsx # playwright script preview: load, edit name, save/close
 │   └── pages/
 │       ├── Automations.tsx  # automation library: stats bar, filter toggles, AutomationCard list
-│       └── Dashboard.tsx    # full dashboard: summary cards, workflow list, modal management
+│       ├── Dashboard.tsx    # full dashboard: summary cards, workflow list, modal management
+│       └── Settings.tsx     # privacy controls: capture toggles, app blocklist, retention, purge
 ├── src-tauri/
 │   ├── src/
 │   │   ├── lib.rs         # sidecar spawn + send_to_sidecar command (request/response IPC)
@@ -116,7 +117,7 @@ personal-process-miner/
 | P12 | LLM script explainer (Ollama/Claude backends, improve automation, opt-in via env vars) | complete |
 | P13 | Automation library UI (run, rename, delete, stats, Automations page + nav) | complete |
 | P14 | One-click run hardening, safety checks, OS-level task scheduling | complete |
-| P15 | | pending |
+| P15 | Privacy controls: settings page, app blocklist, data retention, purge | complete |
 | P16 | | pending |
 | P17 | | pending |
 | P18 | | pending |
@@ -127,10 +128,10 @@ personal-process-miner/
 
 ## Test Count
 
-8 scripts:
-- `sidecar/test_ipc.py` — IPC smoke-test (14 assertions including label/delete/run/update/stats)
+8 scripts (updated test_db.py + test_ipc.py with privacy tests):
+- `sidecar/test_ipc.py` — IPC smoke-test (20 assertions: prev 14 + get_settings, set_setting, add/get/remove blocklist)
 - `sidecar/test_capture.py` — capture + DB file smoke-test
-- `sidecar/test_db.py` — DB layer test on in-memory SQLite (all tables, all helpers)
+- `sidecar/test_db.py` — DB layer test on in-memory SQLite (all tables, all helpers; +5 privacy: migration 5, get/set_setting, get_all_settings, purge_all_data, purge_old_events zero-retention)
 - `sidecar/test_segmenter.py` — segmenter unit tests (5 cases: idle gap, midnight, dominant app, empty/single, live DB)
 - `sidecar/test_fingerprinter.py` — fingerprinter unit tests (7 cases: extract, windows, stability, edit distance, find_patterns freq, min-freq filter, live DB)
 - `sidecar/test_ranker.py` — ranker unit tests (5 cases: score_workflow, ordering, human formatting, live DB summary, empty list)
@@ -169,6 +170,10 @@ None.
 - **`is_script_safe` exported from `main.py`**: Extracted as a module-level function (not a nested helper) so `test_scheduler.py` can import it directly for Test 5.
 - **`schedule_automation` writes a persistent `.py` to `data/macros/`**: The IPC handler writes `{name_slug}_sched.py` before calling `scheduler.schedule_automation` so the OS scheduler has a durable script path to invoke. The temp-file approach used for interactive runs is not suitable for scheduled tasks.
 - **`scheduler.py` uses `schtasks` on Windows**: Windows Task Scheduler is invoked via `schtasks /create` with `/f` (force overwrite). Weekly schedules pass `/d {MON..SUN}`. The task name prefix `PPM_` separates app-managed tasks from system ones.
+- **Migration 5 adds `privacy_settings` table**: 5 default settings seeded via `INSERT OR IGNORE` in `run_migrations` after all migrations applied. Safe to re-run.
+- **Privacy settings loaded once at `start_capture()`**: `_blocklist`, `_allowlist`, `_capture_keystrokes`, `_capture_mouse_moves` module-level vars updated on each `start_capture()` call. No mid-session reload.
+- **`capture_mouse_moves` setting present but no mouse-move events were stored before P15**: pynput `on_move` callback was absent in earlier code; setting now controls whether callback is attached. `on_move=None` passed when disabled.
+- **`purge_all_data` is destructive and irreversible**: Settings page requires typing `"DELETE"` before enabling the button; on success, navigates to Dashboard after 1.5s.
 - **`scheduled` / `schedule_info` fields are client-side only**: The `automations` DB table has no scheduling columns. `AutomationCard` tracks `isScheduled` / `scheduleInfo` in local React state after a successful `schedule_automation` response. A page refresh will show the badge as unscheduled until the backend returns schedule state (deferred to a later prompt with a `get_scheduled_info` IPC call).
 - **Navigation: left sidebar**: Chose 200px dark left sidebar (`#1e293b`) over top bar. Desktop-app layout with sidebar scales better as more pages are added in later prompts.
 - **recharts installed but unused in P9**: `recharts` installed as specified; heatmap uses plain CSS grid per spec. Will be used in a later prompt.

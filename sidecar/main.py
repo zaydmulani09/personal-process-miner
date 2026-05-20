@@ -294,6 +294,50 @@ def _handle(msg: dict) -> dict | None:
     if t == "get_summary_stats":
         return {"type": "summary_stats", "data": ranker.get_summary_stats()}
 
+    if t == "get_settings":
+        return {"type": "settings", "data": db.get_all_settings()}
+
+    if t == "set_setting":
+        key = msg.get("key", "")
+        value = msg.get("value", "")
+        if not key or not isinstance(key, str):
+            return {"type": "error", "message": "key must be a non-empty string"}
+        db.set_setting(key, str(value))
+        return {"type": "ok"}
+
+    if t == "purge_old_events":
+        retention = int(db.get_setting("retention_days", "30"))
+        deleted = db.purge_old_events(retention)
+        return {"type": "purge_result", "deleted": deleted}
+
+    if t == "purge_all_data":
+        counts = db.purge_all_data()
+        return {"type": "purge_result", "counts": counts}
+
+    if t == "get_blocklist":
+        import json as _json
+        apps = _json.loads(db.get_setting("blocklist_apps", "[]"))
+        return {"type": "blocklist", "apps": apps}
+
+    if t == "add_to_blocklist":
+        import json as _json
+        app = msg.get("app", "").strip()
+        if not app:
+            return {"type": "error", "message": "app must be non-empty"}
+        apps = _json.loads(db.get_setting("blocklist_apps", "[]"))
+        if app not in apps:
+            apps.append(app)
+            db.set_setting("blocklist_apps", _json.dumps(apps))
+        return {"type": "ok"}
+
+    if t == "remove_from_blocklist":
+        import json as _json
+        app = msg.get("app", "").strip()
+        apps = _json.loads(db.get_setting("blocklist_apps", "[]"))
+        apps = [a for a in apps if a != app]
+        db.set_setting("blocklist_apps", _json.dumps(apps))
+        return {"type": "ok"}
+
     if t == "schedule_automation":
         automation_id = msg.get("automation_id")
         schedule = msg.get("schedule", {})

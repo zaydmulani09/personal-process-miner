@@ -1,8 +1,9 @@
 import { useState } from "react";
 import Automations from "./pages/Automations";
 import Dashboard from "./pages/Dashboard";
+import Settings from "./pages/Settings";
 
-type Page = "dashboard" | "automations";
+type Page = "dashboard" | "automations" | "settings";
 
 function NavItem({
   label,
@@ -82,6 +83,11 @@ export default function App() {
           active={page === "automations"}
           onClick={() => setPage("automations")}
         />
+        <NavItem
+          label="⚙ Settings"
+          active={page === "settings"}
+          onClick={() => setPage("settings")}
+        />
       </aside>
 
       <main
@@ -91,7 +97,13 @@ export default function App() {
           background: "#ffffff",
         }}
       >
-        {page === "dashboard" ? <Dashboard /> : <Automations />}
+        {page === "dashboard" ? (
+          <Dashboard />
+        ) : page === "automations" ? (
+          <Automations />
+        ) : (
+          <Settings onNavigate={(p) => setPage(p as Page)} />
+        )}
       </main>
     </div>
   );

@@ -130,6 +130,34 @@ def main() -> None:
                     "estimated_time_saved_seconds"):
             assert key in data, f"automation_stats missing key {key!r}: {data}"
 
+        # --- Privacy settings IPC tests ---
+
+        # get_settings → type: settings, all 5 default keys present
+        resp = _send(proc, {"type": "get_settings"})
+        assert resp.get("type") == "settings", f"get_settings type failed: {resp}"
+        data = resp.get("data", {})
+        for key in ("blocklist_apps", "allowlist_apps", "retention_days",
+                    "capture_mouse_moves", "capture_keystrokes"):
+            assert key in data, f"get_settings missing key {key!r}: {data}"
+
+        # set_setting → ok
+        resp = _send(proc, {"type": "set_setting", "key": "retention_days", "value": "7"})
+        assert resp.get("type") == "ok", f"set_setting failed: {resp}"
+
+        # add_to_blocklist → ok, remove_from_blocklist → ok
+        resp = _send(proc, {"type": "add_to_blocklist", "app": "test_app_xyz"})
+        assert resp.get("type") == "ok", f"add_to_blocklist failed: {resp}"
+
+        resp = _send(proc, {"type": "get_blocklist"})
+        assert resp.get("type") == "blocklist", f"get_blocklist type failed: {resp}"
+        assert "test_app_xyz" in resp.get("apps", []), f"blocklist missing added app: {resp}"
+
+        resp = _send(proc, {"type": "remove_from_blocklist", "app": "test_app_xyz"})
+        assert resp.get("type") == "ok", f"remove_from_blocklist failed: {resp}"
+
+        resp = _send(proc, {"type": "get_blocklist"})
+        assert "test_app_xyz" not in resp.get("apps", []), f"blocklist still has removed app: {resp}"
+
         # shutdown → clean exit
         resp = _send(proc, {"type": "shutdown"})
         assert resp.get("type") == "ok", f"shutdown ack failed: {resp}"
