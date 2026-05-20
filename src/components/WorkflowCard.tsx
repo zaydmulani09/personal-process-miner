@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Automation, Workflow } from "../lib/types";
 import MacroRecorder from "./MacroRecorder";
+import ScriptPreviewModal from "./ScriptPreviewModal";
 
 function parseSteps(stepsJson: string): string[] {
   try {
@@ -24,6 +25,7 @@ interface Props {
 
 export default function WorkflowCard({ workflow, onLabel, onDelete }: Props) {
   const [showRecorder, setShowRecorder] = useState(false);
+  const [showScriptPreview, setShowScriptPreview] = useState(false);
   const steps = parseSteps(workflow.steps);
   const isLabeled = workflow.is_labeled === 1;
 
@@ -116,6 +118,21 @@ export default function WorkflowCard({ workflow, onLabel, onDelete }: Props) {
             Record Macro
           </button>
           <button
+            onClick={() => setShowScriptPreview(true)}
+            style={{
+              padding: "6px 14px",
+              fontSize: 13,
+              borderRadius: 6,
+              border: "1px solid #6ee7b7",
+              background: "#ecfdf5",
+              color: "#065f46",
+              cursor: "pointer",
+              boxShadow: "none",
+            }}
+          >
+            Generate Script
+          </button>
+          <button
             onClick={handleDelete}
             style={{
               padding: "6px 14px",
@@ -139,6 +156,15 @@ export default function WorkflowCard({ workflow, onLabel, onDelete }: Props) {
           workflowName={workflow.name || "Unnamed"}
           onSaved={handleMacroSaved}
           onClose={() => setShowRecorder(false)}
+        />
+      )}
+
+      {showScriptPreview && (
+        <ScriptPreviewModal
+          workflowId={workflow.id}
+          workflowName={workflow.name || "Unnamed"}
+          onSaved={() => setShowScriptPreview(false)}
+          onClose={() => setShowScriptPreview(false)}
         />
       )}
     </>

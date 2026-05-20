@@ -69,12 +69,18 @@ pub fn run() {
         .on_window_event(|window, event| {
             if let WindowEvent::CloseRequested { .. } = event {
                 let state = window.state::<SidecarState>();
-                if let Ok(mut guard) = state.0.try_lock() {
-                    if let Some(mut inner) = guard.take() {
-                        let _ = inner.child.write(b"{\"type\": \"shutdown\"}\n");
-                        std::thread::sleep(std::time::Duration::from_millis(300));
-                        let _ = inner.child.kill();
+                // Extract the inner value with the guard held in a nested block so
+                // the MutexGuard (which borrows state) is dropped before state itself.
+                let taken = {
+                    match state.0.try_lock() {
+                        Ok(mut guard) => guard.take(),
+                        Err(_) => None,
                     }
+                };
+                if let Some(mut inner) = taken {
+                    let _ = inner.child.write(b"{\"type\": \"shutdown\"}\n");
+                    std::thread::sleep(std::time::Duration::from_millis(300));
+                    let _ = inner.child.kill();
                 }
             }
         })
