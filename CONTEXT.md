@@ -27,11 +27,15 @@ personal-process-miner/
 │   └── config.toml        # MSVC linker path override
 ├── data/                  # runtime only — gitignored
 │   └── events.db
+├── data/
+│   └── macros/
+│       └── .gitkeep       # keeps directory tracked; *.py files are gitignored
 ├── sidecar/
 │   ├── __init__.py
 │   ├── capture.py         # keyboard/mouse/window capture module
 │   ├── db.py              # migrations runner + all schema helpers
 │   ├── main.py            # stdin/stdout JSON IPC daemon
+│   ├── macro_recorder.py  # pynput macro recorder + pyautogui script generator
 │   ├── requirements.txt
 │   ├── seed.py            # realistic sample data seeder
 │   ├── fingerprinter.py   # sliding-window sequence detector + fuzzy dedup
@@ -53,11 +57,12 @@ personal-process-miner/
 │   │   ├── sidecar.ts     # sendToSidecar IPC utility + SidecarError
 │   │   └── types.ts       # Workflow, Session, SummaryStats, Automation types
 │   ├── components/
-│   │   ├── WorkflowCard.tsx       # card with badge, steps pills, stats, name/delete buttons
+│   │   ├── WorkflowCard.tsx       # card with badge, steps pills, stats, name/delete/record buttons
 │   │   ├── LabelWorkflowModal.tsx # modal with editable steps, name input, save/cancel
 │   │   ├── ActivityHeatmap.tsx    # 12-week session activity grid (plain CSS grid, hover tooltip)
 │   │   ├── StatsBar.tsx           # 4-metric responsive stats cards
-│   │   └── CaptureControls.tsx    # start/stop capture toggle + analyze-now sequence
+│   │   ├── CaptureControls.tsx    # start/stop capture toggle + analyze-now sequence
+│   │   └── MacroRecorder.tsx      # recording modal: start/stop/save/discard + live event count
 │   └── pages/
 │       └── Dashboard.tsx  # full dashboard: summary cards, workflow list, modal management
 ├── src-tauri/
@@ -96,7 +101,7 @@ personal-process-miner/
 | P7 | Pattern ranker & stats (scoring, time-wasted, summary aggregation) | complete |
 | P8 | Manual labeling flow (UI + backend label/delete, Tauri IPC bridge, dashboard) | complete |
 | P9 | Pattern dashboard UI (heatmap, stats bar, capture controls, nav shell) | complete |
-| P10 | | pending |
+| P10 | Macro recorder (start/stop/save, script generation, UI recording flow) | complete |
 | P11 | | pending |
 | P12 | | pending |
 | P13 | | pending |
@@ -120,6 +125,7 @@ personal-process-miner/
 - `sidecar/test_fingerprinter.py` — fingerprinter unit tests (7 cases: extract, windows, stability, edit distance, find_patterns freq, min-freq filter, live DB)
 - `sidecar/test_ranker.py` — ranker unit tests (5 cases: score_workflow, ordering, human formatting, live DB summary, empty list)
 - `sidecar/test_ipc.py` now includes label_workflow and delete_workflow IPC tests (14 total assertions)
+- `sidecar/test_macro_recorder.py` — macro recorder unit tests (5 cases: start/stop, double-start guard, script generation, empty script, save_macro file+DB)
 - `sidecar/seed.py` — not a test, but verifies seeder runs clean (59 rows)
 
 ## Known Issues
@@ -137,6 +143,9 @@ None.
 - **update_session allowlist**: `update_session` filters keys against a hardcoded column allowlist to prevent accidental SQL injection from internal callers. Only `started_at`, `ended_at`, `event_count`, `dominant_app` are accepted.
 - **Tauri IPC bridge**: replaced the fire-and-forget stdout reader with `tokio::sync::mpsc` channel forwarding. `send_to_sidecar` holds a `tokio::sync::Mutex` across write+recv to serialize request/response. `try_lock()` used in the sync window-close handler. `tokio = { version = "1", features = ["sync"] }` added as an explicit Cargo dependency.
 - **seed required before IPC tests**: `test_ipc.py` label/delete tests require at least one workflow in `data/events.db`. Run `py sidecar/seed.py` before running the IPC test suite.
+- **data/ gitignore replaced**: Changed from ignoring all of `data/` to ignoring only `data/events.db` and `data/macros/*.py`. This allows `data/macros/.gitkeep` to be tracked.
+- **_state exposed for testing**: `macro_recorder._state["buffer"]` is accessed directly in `test_macro_recorder.py` to inject synthetic events for Test 5. No separate test helper added.
+- **MacroRecorder modal managed in WorkflowCard**: The `MacroRecorder` modal state (`showRecorder`) is local to `WorkflowCard`, keeping the component self-contained rather than lifting state to Dashboard.
 - **Navigation: left sidebar**: Chose 200px dark left sidebar (`#1e293b`) over top bar. Desktop-app layout with sidebar scales better as more pages are added in later prompts.
 - **recharts installed but unused in P9**: `recharts` installed as specified; heatmap uses plain CSS grid per spec. Will be used in a later prompt.
 - **App.css imported in main.tsx**: Added `import "./App.css"` to `src/main.tsx` — it was missing from the scaffold, which would have prevented CSS variables and skeleton animation from loading.
