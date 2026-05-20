@@ -39,12 +39,14 @@ personal-process-miner/
 │   ├── requirements.txt
 │   ├── seed.py            # realistic sample data seeder
 │   ├── fingerprinter.py   # sliding-window sequence detector + fuzzy dedup
+│   ├── playwright_gen.py  # rule-based playwright script generator from browser events
 │   ├── segmenter.py       # session segmentation engine
 │   ├── sidecar.log        # runtime log (gitignored)
 │   ├── test_capture.py    # capture smoke-test
 │   ├── test_db.py         # DB layer test (in-memory)
 │   ├── test_fingerprinter.py  # fingerprinter unit tests (7 cases)
 │   ├── test_ipc.py        # IPC smoke-test
+│   ├── test_playwright_gen.py  # playwright generator unit tests (6 cases)
 │   ├── test_ranker.py     # ranker unit tests (5 cases)
 │   ├── test_segmenter.py  # segmenter unit tests
 │   └── ranker.py          # workflow scoring, time-wasted stats, summary aggregation
@@ -57,12 +59,13 @@ personal-process-miner/
 │   │   ├── sidecar.ts     # sendToSidecar IPC utility + SidecarError
 │   │   └── types.ts       # Workflow, Session, SummaryStats, Automation types
 │   ├── components/
-│   │   ├── WorkflowCard.tsx       # card with badge, steps pills, stats, name/delete/record buttons
+│   │   ├── WorkflowCard.tsx       # card with badge, steps pills, stats, name/delete/record/script buttons
 │   │   ├── LabelWorkflowModal.tsx # modal with editable steps, name input, save/cancel
 │   │   ├── ActivityHeatmap.tsx    # 12-week session activity grid (plain CSS grid, hover tooltip)
 │   │   ├── StatsBar.tsx           # 4-metric responsive stats cards
 │   │   ├── CaptureControls.tsx    # start/stop capture toggle + analyze-now sequence
-│   │   └── MacroRecorder.tsx      # recording modal: start/stop/save/discard + live event count
+│   │   ├── MacroRecorder.tsx      # recording modal: start/stop/save/discard + live event count
+│   │   └── ScriptPreviewModal.tsx # playwright script preview: load, edit name, save/close
 │   └── pages/
 │       └── Dashboard.tsx  # full dashboard: summary cards, workflow list, modal management
 ├── src-tauri/
@@ -102,7 +105,7 @@ personal-process-miner/
 | P8 | Manual labeling flow (UI + backend label/delete, Tauri IPC bridge, dashboard) | complete |
 | P9 | Pattern dashboard UI (heatmap, stats bar, capture controls, nav shell) | complete |
 | P10 | Macro recorder (start/stop/save, script generation, UI recording flow) | complete |
-| P11 | | pending |
+| P11 | Playwright script generator (browser event detection, preview modal, save automation) | complete |
 | P12 | | pending |
 | P13 | | pending |
 | P14 | | pending |
@@ -126,6 +129,7 @@ personal-process-miner/
 - `sidecar/test_ranker.py` — ranker unit tests (5 cases: score_workflow, ordering, human formatting, live DB summary, empty list)
 - `sidecar/test_ipc.py` now includes label_workflow and delete_workflow IPC tests (14 total assertions)
 - `sidecar/test_macro_recorder.py` — macro recorder unit tests (5 cases: start/stop, double-start guard, script generation, empty script, save_macro file+DB)
+- `sidecar/test_playwright_gen.py` — playwright generator unit tests (6 cases: is_browser_event, extract_url_from_title, classify_event, group_keystrokes, no-browser-events script, full script structure)
 - `sidecar/seed.py` — not a test, but verifies seeder runs clean (59 rows)
 
 ## Known Issues
@@ -146,6 +150,8 @@ None.
 - **data/ gitignore replaced**: Changed from ignoring all of `data/` to ignoring only `data/events.db` and `data/macros/*.py`. This allows `data/macros/.gitkeep` to be tracked.
 - **_state exposed for testing**: `macro_recorder._state["buffer"]` is accessed directly in `test_macro_recorder.py` to inject synthetic events for Test 5. No separate test helper added.
 - **MacroRecorder modal managed in WorkflowCard**: The `MacroRecorder` modal state (`showRecorder`) is local to `WorkflowCard`, keeping the component self-contained rather than lifting state to Dashboard.
+- **`classify_event` accepts multi-char details**: After `group_keystrokes` merges consecutive keystrokes into a single event with a multi-char `detail` string, `classify_event` must still return "type" for it. Changed the check from `len(inner) == 1` to `inner and not inner.startswith("Key.")` — this correctly classifies both single and merged char events as "type" while still rejecting `Key.space` etc.
+- **Rust borrow lifetime fix in shutdown handler**: The `on_window_event` closure had a borrow issue where the `MutexGuard` (from `try_lock`) could outlive the `state` binding. Fixed by wrapping the `try_lock` in a nested block `{}` that drops the guard before `state` goes out of scope.
 - **Navigation: left sidebar**: Chose 200px dark left sidebar (`#1e293b`) over top bar. Desktop-app layout with sidebar scales better as more pages are added in later prompts.
 - **recharts installed but unused in P9**: `recharts` installed as specified; heatmap uses plain CSS grid per spec. Will be used in a later prompt.
 - **App.css imported in main.tsx**: Added `import "./App.css"` to `src/main.tsx` — it was missing from the scaffold, which would have prevented CSS variables and skeleton animation from loading.

@@ -14,6 +14,7 @@ import capture
 import db
 import fingerprinter
 import macro_recorder
+import playwright_gen
 import ranker
 import segmenter
 
@@ -104,6 +105,51 @@ def _handle(msg: dict) -> dict | None:
     if t == "get_recording_status":
         status = macro_recorder.get_recording_status()
         return {"type": "recording_status", **status}
+
+    if t == "generate_playwright":
+        workflow_id = msg.get("workflow_id")
+        name = msg.get("name", "")
+        if not isinstance(workflow_id, int):
+            return {"type": "error", "message": "workflow_id must be an integer"}
+        workflows = db.get_workflows()
+        workflow = next((w for w in workflows if w["id"] == workflow_id), None)
+        if workflow is None:
+            return {"type": "error", "message": "workflow not found"}
+        raw_events = db.get_recent_events(limit=10_000)
+        sessions = segmenter.segment_events(raw_events)
+        all_events: list[dict] = []
+        for sess in sessions:
+            ids = sess.get("event_ids", [])
+            all_events.extend(db.get_events_by_ids(ids) if ids else [])
+        script_name = name or workflow.get("name") or f"workflow_{workflow_id}"
+        result = playwright_gen.save_playwright_script(all_events, script_name, workflow_id)
+        if not result.get("ok"):
+            return {"type": "error", "message": result.get("error", "unknown error")}
+        return {
+            "type": "playwright_ready",
+            "automation_id": result["automation_id"],
+            "script_path": result["script_path"],
+            "step_count": result["step_count"],
+        }
+
+    if t == "preview_playwright":
+        workflow_id = msg.get("workflow_id")
+        if not isinstance(workflow_id, int):
+            return {"type": "error", "message": "workflow_id must be an integer"}
+        workflows = db.get_workflows()
+        workflow = next((w for w in workflows if w["id"] == workflow_id), None)
+        if workflow is None:
+            return {"type": "error", "message": "workflow not found"}
+        raw_events = db.get_recent_events(limit=10_000)
+        sessions = segmenter.segment_events(raw_events)
+        all_events: list[dict] = []
+        for sess in sessions:
+            ids = sess.get("event_ids", [])
+            all_events.extend(db.get_events_by_ids(ids) if ids else [])
+        script_name = workflow.get("name") or f"workflow_{workflow_id}"
+        script = playwright_gen.generate_playwright_script(all_events, script_name)
+        step_count = script.count("page.")
+        return {"type": "playwright_preview", "script": script, "step_count": step_count}
 
     if t == "get_ranked_workflows":
         return {"type": "ranked_workflows", "data": ranker.get_ranked_workflows()}
