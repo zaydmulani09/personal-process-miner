@@ -342,6 +342,25 @@ def insert_automation(automation: dict) -> int:
         return cur.lastrowid
 
 
+def label_workflow(workflow_id: int, name: str, steps: list) -> bool:
+    conn = _get_conn()
+    with _lock:
+        cur = conn.execute(
+            "UPDATE workflows SET name = ?, steps = ?, is_labeled = 1 WHERE id = ?",
+            (name, json.dumps(steps), workflow_id),
+        )
+        conn.commit()
+        return cur.rowcount > 0
+
+
+def delete_workflow(workflow_id: int) -> bool:
+    conn = _get_conn()
+    with _lock:
+        cur = conn.execute("DELETE FROM workflows WHERE id = ?", (workflow_id,))
+        conn.commit()
+        return cur.rowcount > 0
+
+
 def get_automations() -> list[dict]:
     conn = _get_conn()
     with _lock:

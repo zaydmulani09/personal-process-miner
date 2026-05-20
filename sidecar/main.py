@@ -61,6 +61,28 @@ def _handle(msg: dict) -> dict | None:
         patterns = fingerprinter.run_fingerprinting()
         return {"type": "fingerprinting_complete", "pattern_count": len(patterns), "patterns": patterns}
 
+    if t == "label_workflow":
+        workflow_id = msg.get("workflow_id")
+        name = msg.get("name", "")
+        steps = msg.get("steps", [])
+        if not isinstance(workflow_id, int):
+            return {"type": "error", "message": "workflow_id must be an integer"}
+        if not name or not isinstance(name, str):
+            return {"type": "error", "message": "name must be a non-empty string"}
+        if not steps or not isinstance(steps, list):
+            return {"type": "error", "message": "steps must be a non-empty list"}
+        if not db.label_workflow(workflow_id, name, steps):
+            return {"type": "error", "message": "workflow not found"}
+        return {"type": "ok", "workflow_id": workflow_id, "name": name}
+
+    if t == "delete_workflow":
+        workflow_id = msg.get("workflow_id")
+        if not isinstance(workflow_id, int):
+            return {"type": "error", "message": "workflow_id must be an integer"}
+        if not db.delete_workflow(workflow_id):
+            return {"type": "error", "message": "workflow not found"}
+        return {"type": "ok", "workflow_id": workflow_id}
+
     if t == "get_ranked_workflows":
         return {"type": "ranked_workflows", "data": ranker.get_ranked_workflows()}
 

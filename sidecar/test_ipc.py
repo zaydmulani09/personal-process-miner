@@ -67,6 +67,27 @@ def main() -> None:
         assert resp.get("type") == "automations", f"get_automations type failed: {resp}"
         assert isinstance(resp.get("data"), list), f"get_automations data not list: {resp}"
 
+        # label_workflow with empty name → error
+        resp = _send(proc, {"type": "label_workflow", "workflow_id": 1, "name": "", "steps": ["A"]})
+        assert resp.get("type") == "error", f"label empty name should error: {resp}"
+
+        # label_workflow / delete_workflow with valid data
+        resp = _send(proc, {"type": "get_workflows"})
+        assert resp.get("type") == "workflows"
+        workflows = resp.get("data", [])
+        assert len(workflows) > 0, "No workflows in DB — run `py sidecar/seed.py` first"
+        wf_id = workflows[0]["id"]
+
+        resp = _send(proc, {"type": "label_workflow", "workflow_id": wf_id, "name": "Test Label", "steps": ["A", "B"]})
+        assert resp.get("type") == "ok", f"label_workflow valid failed: {resp}"
+
+        resp = _send(proc, {"type": "delete_workflow", "workflow_id": wf_id})
+        assert resp.get("type") == "ok", f"delete_workflow valid failed: {resp}"
+
+        # delete_workflow with nonexistent id → error
+        resp = _send(proc, {"type": "delete_workflow", "workflow_id": 999999})
+        assert resp.get("type") == "error", f"delete nonexistent should error: {resp}"
+
         # shutdown → clean exit
         resp = _send(proc, {"type": "shutdown"})
         assert resp.get("type") == "ok", f"shutdown ack failed: {resp}"
