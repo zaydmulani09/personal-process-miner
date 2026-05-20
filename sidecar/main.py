@@ -1,7 +1,9 @@
-import sys
+import os
 import json
 import logging
-import os
+import subprocess
+import sys
+import tempfile
 
 _log_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sidecar.log")
 logging.basicConfig(
@@ -151,6 +153,95 @@ def _handle(msg: dict) -> dict | None:
         script = playwright_gen.generate_playwright_script(all_events, script_name)
         step_count = script.count("page.")
         return {"type": "playwright_preview", "script": script, "step_count": step_count}
+
+    if t == "run_automation":
+        automation_id = msg.get("automation_id")
+        if not isinstance(automation_id, int):
+            return {"type": "error", "message": "automation_id must be an integer"}
+        try:
+            automation = db.get_automation_by_id(automation_id)
+            if automation is None:
+                return {"type": "error", "message": "automation not found"}
+            script_body = automation.get("script_body") or ""
+            tmp_path = None
+            try:
+                with tempfile.NamedTemporaryFile(
+                    mode="w", suffix=".py", delete=False, encoding="utf-8"
+                ) as f:
+                    f.write(script_body)
+                    tmp_path = f.name
+                result = subprocess.run(
+                    ["py", tmp_path],
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
+                )
+                run_status = "success" if result.returncode == 0 else "error"
+                stdout = result.stdout
+                stderr = result.stderr
+            except subprocess.TimeoutExpired:
+                run_status = "error"
+                stdout = ""
+                stderr = "Script timed out after 60 seconds"
+            finally:
+                if tmp_path and os.path.exists(tmp_path):
+                    try:
+                        os.unlink(tmp_path)
+                    except OSError:
+                        pass
+            db.update_automation_run(automation_id, run_status)
+            return {
+                "type": "run_result",
+                "automation_id": automation_id,
+                "status": run_status,
+                "stdout": stdout,
+                "stderr": stderr,
+            }
+        except Exception as exc:
+            logging.exception("run_automation error")
+            return {"type": "error", "message": str(exc)}
+
+    if t == "update_automation_name":
+        automation_id = msg.get("automation_id")
+        name = msg.get("name", "")
+        if not isinstance(automation_id, int):
+            return {"type": "error", "message": "automation_id must be an integer"}
+        if not name or not isinstance(name, str):
+            return {"type": "error", "message": "name must be a non-empty string"}
+        db.update_automation_name(automation_id, name)
+        return {"type": "ok", "automation_id": automation_id}
+
+    if t == "delete_automation":
+        automation_id = msg.get("automation_id")
+        if not isinstance(automation_id, int):
+            return {"type": "error", "message": "automation_id must be an integer"}
+        # Attempt to remove associated script file from data/macros/
+        automation = db.get_automation_by_id(automation_id)
+        if automation is None:
+            return {"type": "error", "message": "automation not found"}
+        auto_name = automation.get("name", "")
+        script_type = automation.get("script_type", "")
+        name_slug = "".join(
+            c if (c.isalnum() or c == "_") else "_"
+            for c in auto_name.lower().replace(" ", "_")
+        )
+        _macros_dir = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), "..", "data", "macros"
+        )
+        if script_type == "playwright":
+            script_file = os.path.join(_macros_dir, f"{name_slug}_playwright.py")
+        else:
+            script_file = os.path.join(_macros_dir, f"{name_slug}.py")
+        if os.path.exists(script_file):
+            try:
+                os.unlink(script_file)
+            except OSError:
+                pass
+        db.delete_automation(automation_id)
+        return {"type": "ok", "automation_id": automation_id}
+
+    if t == "get_automation_stats":
+        return {"type": "automation_stats", "data": db.get_automation_stats()}
 
     if t == "check_llm":
         available = llm_explainer.is_llm_available()

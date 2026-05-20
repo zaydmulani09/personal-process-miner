@@ -1,8 +1,21 @@
+import { useState } from "react";
+import Automations from "./pages/Automations";
 import Dashboard from "./pages/Dashboard";
 
-function NavItem({ label, active }: { label: string; active?: boolean }) {
+type Page = "dashboard" | "automations";
+
+function NavItem({
+  label,
+  active,
+  onClick,
+}: {
+  label: string;
+  active?: boolean;
+  onClick: () => void;
+}) {
   return (
     <div
+      onClick={onClick}
       style={{
         padding: "8px 12px",
         fontSize: 14,
@@ -21,6 +34,8 @@ function NavItem({ label, active }: { label: string; active?: boolean }) {
 }
 
 export default function App() {
+  const [page, setPage] = useState<Page>("dashboard");
+
   return (
     <div
       style={{
@@ -57,7 +72,16 @@ export default function App() {
           <span>Process Miner</span>
         </div>
 
-        <NavItem label="Dashboard" active />
+        <NavItem
+          label="Dashboard"
+          active={page === "dashboard"}
+          onClick={() => setPage("dashboard")}
+        />
+        <NavItem
+          label="Automations"
+          active={page === "automations"}
+          onClick={() => setPage("automations")}
+        />
       </aside>
 
       <main
@@ -67,7 +91,7 @@ export default function App() {
           background: "#ffffff",
         }}
       >
-        <Dashboard />
+        {page === "dashboard" ? <Dashboard /> : <Automations />}
       </main>
     </div>
   );

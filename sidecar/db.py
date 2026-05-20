@@ -385,3 +385,55 @@ def update_automation_script(automation_id: int, script_body: str) -> None:
             (script_body, automation_id),
         )
         conn.commit()
+
+
+def update_automation_run(automation_id: int, status: str) -> None:
+    conn = _get_conn()
+    with _lock:
+        conn.execute(
+            "UPDATE automations "
+            "SET last_run_at = ?, run_count = run_count + 1, last_run_status = ? "
+            "WHERE id = ?",
+            (datetime.now(timezone.utc).isoformat(), status, automation_id),
+        )
+        conn.commit()
+
+
+def update_automation_name(automation_id: int, name: str) -> None:
+    conn = _get_conn()
+    with _lock:
+        conn.execute(
+            "UPDATE automations SET name = ? WHERE id = ?",
+            (name, automation_id),
+        )
+        conn.commit()
+
+
+def delete_automation(automation_id: int) -> bool:
+    conn = _get_conn()
+    with _lock:
+        cur = conn.execute(
+            "DELETE FROM automations WHERE id = ?", (automation_id,)
+        )
+        conn.commit()
+        return cur.rowcount > 0
+
+
+def get_automation_stats() -> dict:
+    conn = _get_conn()
+    with _lock:
+        total = conn.execute(
+            "SELECT COUNT(*) FROM automations"
+        ).fetchone()[0]
+        total_runs = conn.execute(
+            "SELECT COALESCE(SUM(run_count), 0) FROM automations"
+        ).fetchone()[0]
+        successful_runs = conn.execute(
+            "SELECT COUNT(*) FROM automations WHERE last_run_status = 'success'"
+        ).fetchone()[0]
+    return {
+        "total_automations": total,
+        "total_runs": int(total_runs),
+        "successful_runs": successful_runs,
+        "estimated_time_saved_seconds": float(total_runs) * 120.0,
+    }
