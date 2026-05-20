@@ -1,0 +1,359 @@
+import { useEffect, useRef, useState } from "react";
+import { sendToSidecar } from "../lib/sidecar";
+
+type Settings = Record<string, string>;
+
+const RETENTION_OPTIONS = [
+  { label: "7 days", value: "7" },
+  { label: "30 days", value: "30" },
+  { label: "90 days", value: "90" },
+  { label: "Forever", value: "0" },
+];
+
+const sectionStyle: React.CSSProperties = {
+  background: "#fff",
+  border: "1px solid #e2e8f0",
+  borderRadius: 10,
+  padding: "20px 24px",
+  marginBottom: 20,
+};
+
+const labelStyle: React.CSSProperties = {
+  fontWeight: 600,
+  fontSize: 14,
+  color: "#0f172a",
+  marginBottom: 2,
+};
+
+const subStyle: React.CSSProperties = {
+  fontSize: 13,
+  color: "#64748b",
+  marginBottom: 12,
+};
+
+interface Props {
+  onNavigate: (page: string) => void;
+}
+
+export default function Settings({ onNavigate }: Props) {
+  const [settings, setSettings] = useState<Settings>({});
+  const [blocklist, setBlocklist] = useState<string[]>([]);
+  const [newApp, setNewApp] = useState("");
+  const [purgeMsg, setPurgeMsg] = useState<string | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState("");
+  const [loading, setLoading] = useState(true);
+  const newAppRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    Promise.all([
+      sendToSidecar({ type: "get_settings" }),
+      sendToSidecar({ type: "get_blocklist" }),
+    ]).then(([sResp, bResp]) => {
+      setSettings((sResp as { data: Settings }).data ?? {});
+      setBlocklist((bResp as { apps: string[] }).apps ?? []);
+      setLoading(false);
+    }).catch(() => setLoading(false));
+  }, []);
+
+  const setSetting = async (key: string, value: string) => {
+    setSettings((prev) => ({ ...prev, [key]: value }));
+    await sendToSidecar({ type: "set_setting", key, value });
+  };
+
+  const addApp = async () => {
+    const app = newApp.trim();
+    if (!app) return;
+    await sendToSidecar({ type: "add_to_blocklist", app });
+    setBlocklist((prev) => prev.includes(app) ? prev : [...prev, app]);
+    setNewApp("");
+    newAppRef.current?.focus();
+  };
+
+  const removeApp = async (app: string) => {
+    await sendToSidecar({ type: "remove_from_blocklist", app });
+    setBlocklist((prev) => prev.filter((a) => a !== app));
+  };
+
+  const cleanupNow = async () => {
+    setPurgeMsg(null);
+    const resp = await sendToSidecar({ type: "purge_old_events" }) as { deleted: number };
+    setPurgeMsg(`Deleted ${resp.deleted} old event${resp.deleted === 1 ? "" : "s"}.`);
+  };
+
+  const purgeAll = async () => {
+    const resp = await sendToSidecar({ type: "purge_all_data" }) as {
+      counts: Record<string, number>;
+    };
+    const c = resp.counts;
+    setPurgeMsg(
+      `Purged: ${c.events} events, ${c.sessions} sessions, ${c.workflows} workflows, ${c.automations} automations.`
+    );
+    setDeleteConfirm("");
+    setTimeout(() => onNavigate("dashboard"), 1500);
+  };
+
+  if (loading) {
+    return (
+      <div style={{ padding: 32, fontFamily: "system-ui, sans-serif" }}>
+        Loading settings…
+      </div>
+    );
+  }
+
+  const keystrokesOn = settings["capture_keystrokes"] === "true";
+  const mouseMovesOn = settings["capture_mouse_moves"] !== "false";
+  const retention = settings["retention_days"] ?? "30";
+
+  return (
+    <div
+      style={{
+        padding: 32,
+        maxWidth: 720,
+        margin: "0 auto",
+        fontFamily: "system-ui, sans-serif",
+      }}
+    >
+      {/* Header */}
+      <div style={{ marginBottom: 28 }}>
+        <h1 style={{ fontSize: 22, fontWeight: 700, margin: "0 0 4px", color: "#0f172a" }}>
+          Privacy & Settings
+        </h1>
+        <p style={{ margin: 0, fontSize: 14, color: "#64748b" }}>
+          All data stays on your machine. Nothing is sent to the cloud.
+        </p>
+      </div>
+
+      {/* Capture Privacy */}
+      <div style={sectionStyle}>
+        <div style={labelStyle}>Capture Privacy</div>
+        <div style={subStyle}>Control what gets recorded during capture sessions.</div>
+
+        <label
+          style={{
+            display: "flex",
+            alignItems: "flex-start",
+            gap: 12,
+            marginBottom: 14,
+            cursor: "pointer",
+          }}
+        >
+          <input
+            type="checkbox"
+            checked={keystrokesOn}
+            onChange={(e) => setSetting("capture_keystrokes", e.target.checked ? "true" : "false")}
+            style={{ marginTop: 2 }}
+          />
+          <div>
+            <div style={{ fontSize: 14, fontWeight: 500, color: "#0f172a" }}>
+              Record keystrokes
+            </div>
+            {keystrokesOn && (
+              <div style={{ fontSize: 12, color: "#b45309", marginTop: 2 }}>
+                ⚠ Key names will be stored locally
+              </div>
+            )}
+          </div>
+        </label>
+
+        <label
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 12,
+            cursor: "pointer",
+          }}
+        >
+          <input
+            type="checkbox"
+            checked={mouseMovesOn}
+            onChange={(e) =>
+              setSetting("capture_mouse_moves", e.target.checked ? "true" : "false")
+            }
+          />
+          <div style={{ fontSize: 14, fontWeight: 500, color: "#0f172a" }}>
+            Record mouse movements
+          </div>
+        </label>
+      </div>
+
+      {/* App Filter */}
+      <div style={sectionStyle}>
+        <div style={labelStyle}>Never record these apps</div>
+        <div style={subStyle}>Add app names to block from recording (case-insensitive substring match).</div>
+
+        <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+          <input
+            ref={newAppRef}
+            value={newApp}
+            onChange={(e) => setNewApp(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && addApp()}
+            placeholder="e.g. 1password, slack"
+            style={{
+              flex: 1,
+              fontSize: 13,
+              padding: "7px 10px",
+              borderRadius: 6,
+              border: "1px solid #e2e8f0",
+              outline: "none",
+            }}
+          />
+          <button
+            onClick={addApp}
+            style={{
+              padding: "7px 16px",
+              fontSize: 13,
+              borderRadius: 6,
+              border: "none",
+              background: "#3b82f6",
+              color: "#fff",
+              cursor: "pointer",
+            }}
+          >
+            Add
+          </button>
+        </div>
+
+        {blocklist.length === 0 ? (
+          <p style={{ fontSize: 13, color: "#94a3b8", margin: 0 }}>
+            No apps blocked — all apps are being recorded
+          </p>
+        ) : (
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+            {blocklist.map((app) => (
+              <span
+                key={app}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 6,
+                  background: "#f1f5f9",
+                  border: "1px solid #e2e8f0",
+                  borderRadius: 20,
+                  padding: "4px 12px",
+                  fontSize: 13,
+                  color: "#334155",
+                }}
+              >
+                {app}
+                <button
+                  onClick={() => removeApp(app)}
+                  style={{
+                    background: "none",
+                    border: "none",
+                    cursor: "pointer",
+                    padding: 0,
+                    fontSize: 14,
+                    color: "#94a3b8",
+                    lineHeight: 1,
+                  }}
+                  title={`Remove ${app}`}
+                >
+                  ×
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Data Retention */}
+      <div style={sectionStyle}>
+        <div style={labelStyle}>Data Retention</div>
+        <div style={subStyle}>Events older than this will be deleted on next cleanup.</div>
+
+        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
+          <label style={{ fontSize: 14, color: "#0f172a", fontWeight: 500 }}>
+            Keep data for{" "}
+          </label>
+          <select
+            value={retention}
+            onChange={(e) => setSetting("retention_days", e.target.value)}
+            style={{
+              fontSize: 13,
+              padding: "6px 10px",
+              borderRadius: 6,
+              border: "1px solid #e2e8f0",
+              background: "#fff",
+              cursor: "pointer",
+            }}
+          >
+            {RETENTION_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <button
+          onClick={cleanupNow}
+          style={{
+            padding: "7px 16px",
+            fontSize: 13,
+            borderRadius: 6,
+            border: "1px solid #e2e8f0",
+            background: "#f8fafc",
+            color: "#475569",
+            cursor: "pointer",
+          }}
+        >
+          Clean up now
+        </button>
+
+        {purgeMsg && !purgeMsg.startsWith("Purged:") && (
+          <span style={{ marginLeft: 12, fontSize: 13, color: "#15803d" }}>{purgeMsg}</span>
+        )}
+      </div>
+
+      {/* Danger Zone */}
+      <div
+        style={{
+          ...sectionStyle,
+          borderColor: "#fecaca",
+          background: "#fff5f5",
+        }}
+      >
+        <div style={{ ...labelStyle, color: "#dc2626" }}>Danger Zone</div>
+        <div style={{ ...subStyle, marginBottom: 16 }}>
+          Permanently delete all captured events, sessions, workflows, and automations.
+          This cannot be undone.
+        </div>
+
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+          <input
+            value={deleteConfirm}
+            onChange={(e) => setDeleteConfirm(e.target.value)}
+            placeholder='Type "DELETE" to confirm'
+            style={{
+              fontSize: 13,
+              padding: "7px 10px",
+              borderRadius: 6,
+              border: "1px solid #fca5a5",
+              outline: "none",
+              width: 200,
+            }}
+          />
+          <button
+            onClick={purgeAll}
+            disabled={deleteConfirm !== "DELETE"}
+            style={{
+              padding: "7px 16px",
+              fontSize: 13,
+              borderRadius: 6,
+              border: "none",
+              background: deleteConfirm === "DELETE" ? "#dc2626" : "#fca5a5",
+              color: "#fff",
+              cursor: deleteConfirm === "DELETE" ? "pointer" : "not-allowed",
+            }}
+          >
+            Purge All Data
+          </button>
+        </div>
+
+        {purgeMsg && purgeMsg.startsWith("Purged:") && (
+          <div style={{ fontSize: 13, color: "#dc2626", fontWeight: 500 }}>{purgeMsg}</div>
+        )}
+      </div>
+    </div>
+  );
+}

@@ -78,7 +78,25 @@ MIGRATIONS: list[tuple[int, str]] = [
         )
         """,
     ),
+    (
+        5,
+        """
+        CREATE TABLE IF NOT EXISTS privacy_settings (
+            key        TEXT PRIMARY KEY,
+            value      TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+        """,
+    ),
 ]
+
+_DEFAULT_SETTINGS: dict[str, str] = {
+    "blocklist_apps": "[]",
+    "allowlist_apps": "[]",
+    "retention_days": "30",
+    "capture_mouse_moves": "true",
+    "capture_keystrokes": "false",
+}
 
 
 def run_migrations(conn: sqlite3.Connection) -> None:
@@ -123,6 +141,15 @@ def run_migrations(conn: sqlite3.Connection) -> None:
         )
         conn.commit()
         logging.info("Migration %d applied", version)
+
+    # Seed default privacy settings if not present.
+    now = datetime.now(timezone.utc).isoformat()
+    for key, value in _DEFAULT_SETTINGS.items():
+        conn.execute(
+            "INSERT OR IGNORE INTO privacy_settings (key, value, updated_at) VALUES (?, ?, ?)",
+            (key, value, now),
+        )
+    conn.commit()
 
 
 # ---------------------------------------------------------------------------
@@ -437,3 +464,66 @@ def get_automation_stats() -> dict:
         "successful_runs": successful_runs,
         "estimated_time_saved_seconds": float(total_runs) * 120.0,
     }
+
+
+# ---------------------------------------------------------------------------
+# Privacy Settings
+# ---------------------------------------------------------------------------
+
+
+def get_setting(key: str, default: str = "") -> str:
+    conn = _get_conn()
+    with _lock:
+        row = conn.execute(
+            "SELECT value FROM privacy_settings WHERE key = ?", (key,)
+        ).fetchone()
+    return row[0] if row else default
+
+
+def set_setting(key: str, value: str) -> None:
+    conn = _get_conn()
+    now = datetime.now(timezone.utc).isoformat()
+    with _lock:
+        conn.execute(
+            "INSERT INTO privacy_settings (key, value, updated_at) VALUES (?, ?, ?)"
+            " ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
+            (key, value, now),
+        )
+        conn.commit()
+
+
+def get_all_settings() -> dict:
+    conn = _get_conn()
+    with _lock:
+        rows = conn.execute("SELECT key, value FROM privacy_settings").fetchall()
+    return {row[0]: row[1] for row in rows}
+
+
+# ---------------------------------------------------------------------------
+# Purge helpers
+# ---------------------------------------------------------------------------
+
+
+def purge_old_events(retention_days: int) -> int:
+    if retention_days == 0:
+        return 0
+    conn = _get_conn()
+    cutoff = datetime.now(timezone.utc)
+    from datetime import timedelta
+    cutoff = (cutoff - timedelta(days=retention_days)).isoformat()
+    with _lock:
+        cur = conn.execute("DELETE FROM events WHERE timestamp < ?", (cutoff,))
+        conn.commit()
+    return cur.rowcount
+
+
+def purge_all_data() -> dict:
+    conn = _get_conn()
+    with _lock:
+        counts = {}
+        for table in ("events", "sessions", "workflows", "automations"):
+            n = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+            conn.execute(f"DELETE FROM {table}")
+            counts[table] = n
+        conn.commit()
+    return counts

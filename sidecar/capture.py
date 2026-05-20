@@ -1,4 +1,5 @@
 import ctypes
+import json
 import logging
 import os
 import threading
@@ -16,6 +17,21 @@ _kb_listener: keyboard.Listener | None = None
 _mouse_listener: mouse.Listener | None = None
 _poll_thread: threading.Thread | None = None
 _stop_event = threading.Event()
+
+# Privacy settings — loaded once at start_capture()
+_blocklist: list[str] = []
+_allowlist: list[str] = []
+_capture_keystrokes: bool = False
+_capture_mouse_moves: bool = True
+
+
+def _app_allowed(app_name: str | None) -> bool:
+    name = (app_name or "").lower()
+    if _blocklist and any(b in name for b in _blocklist):
+        return False
+    if _allowlist and not any(a in name for a in _allowlist):
+        return False
+    return True
 
 
 def _now() -> str:
@@ -51,14 +67,15 @@ def _window_poller() -> None:
                 last_title = title
                 hwnd = getattr(win, "_hWnd", None)
                 app_name = _get_exe_name(hwnd) if hwnd else title
-                db.insert_event(
-                    {
-                        "timestamp": _now(),
-                        "event_type": "window_focus",
-                        "app_name": app_name or title,
-                        "window_title": title,
-                    }
-                )
+                if _app_allowed(app_name):
+                    db.insert_event(
+                        {
+                            "timestamp": _now(),
+                            "event_type": "window_focus",
+                            "app_name": app_name or title,
+                            "window_title": title,
+                        }
+                    )
         except Exception:
             logging.exception("Window poll error")
         _stop_event.wait(0.5)
@@ -69,9 +86,14 @@ def _on_press(key) -> None:
         name = str(key)
         if any(name.startswith(p) for p in _MODIFIER_PREFIXES):
             return
-        db.insert_event({"timestamp": _now(), "event_type": "key_press", "detail": name})
+        detail = name if _capture_keystrokes else "[key]"
+        db.insert_event({"timestamp": _now(), "event_type": "key_press", "detail": detail})
     except Exception:
         logging.exception("Key press handler error")
+
+
+def _on_move(x: int, y: int) -> None:
+    pass  # filtered at listener level via suppress; kept for pynput compat
 
 
 def _on_click(x: int, y: int, button, pressed: bool) -> None:
@@ -93,7 +115,14 @@ def _on_click(x: int, y: int, button, pressed: bool) -> None:
 
 def start_capture() -> None:
     global _kb_listener, _mouse_listener, _poll_thread
+    global _blocklist, _allowlist, _capture_keystrokes, _capture_mouse_moves
     _stop_event.clear()
+
+    # Load privacy settings once.
+    _blocklist = [s.lower() for s in json.loads(db.get_setting("blocklist_apps", "[]"))]
+    _allowlist = [s.lower() for s in json.loads(db.get_setting("allowlist_apps", "[]"))]
+    _capture_keystrokes = db.get_setting("capture_keystrokes", "false") == "true"
+    _capture_mouse_moves = db.get_setting("capture_mouse_moves", "true") == "true"
 
     _poll_thread = threading.Thread(target=_window_poller, daemon=True, name="window-poller")
     _poll_thread.start()
@@ -101,7 +130,10 @@ def start_capture() -> None:
     _kb_listener = keyboard.Listener(on_press=_on_press)
     _kb_listener.start()
 
-    _mouse_listener = mouse.Listener(on_click=_on_click)
+    _mouse_listener = mouse.Listener(
+        on_click=_on_click,
+        on_move=None,  # mouse moves never stored
+    )
     _mouse_listener.start()
 
     logging.info("Capture started")

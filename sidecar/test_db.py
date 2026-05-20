@@ -26,14 +26,49 @@ def _tables() -> set[str]:
 
 
 def main() -> None:
-    # All 5 tables must exist after migrations.
-    expected = {"schema_migrations", "events", "sessions", "workflows", "automations"}
+    # All tables must exist after migrations (including privacy_settings from migration 5).
+    expected = {"schema_migrations", "events", "sessions", "workflows", "automations", "privacy_settings"}
     missing = expected - _tables()
     assert not missing, f"Missing tables: {missing}"
 
-    # schema_migrations must have 4 rows.
+    # schema_migrations must have 5 rows.
     count = _mem.execute("SELECT COUNT(*) FROM schema_migrations").fetchone()[0]
-    assert count == 4, f"Expected 4 migration rows, got {count}"
+    assert count == 5, f"Expected 5 migration rows, got {count}"
+
+    # --- Privacy settings tests ---
+
+    # get_setting returns default when key missing.
+    val = db.get_setting("nonexistent_key_xyz", "mydefault")
+    assert val == "mydefault", f"get_setting default failed: {val!r}"
+
+    # Default settings seeded on migration.
+    for key in ("blocklist_apps", "allowlist_apps", "retention_days", "capture_mouse_moves", "capture_keystrokes"):
+        v = db.get_setting(key)
+        assert v != "", f"Default setting {key!r} not seeded"
+
+    # set_setting / get_setting round-trip.
+    db.set_setting("retention_days", "90")
+    assert db.get_setting("retention_days") == "90", "set_setting/get_setting round-trip failed"
+
+    # get_all_settings returns dict with all 5 default keys.
+    all_s = db.get_all_settings()
+    for key in ("blocklist_apps", "allowlist_apps", "retention_days", "capture_mouse_moves", "capture_keystrokes"):
+        assert key in all_s, f"get_all_settings missing key {key!r}"
+
+    # purge_old_events with retention_days=0 deletes nothing.
+    db.insert_event({"event_type": "key_press", "detail": "x",
+                     "timestamp": "2020-01-01T00:00:00+00:00"})
+    deleted = db.purge_old_events(0)
+    assert deleted == 0, f"purge_old_events(0) should delete nothing, got {deleted}"
+
+    # purge_all_data clears all 4 data tables, returns counts.
+    counts = db.purge_all_data()
+    for key in ("events", "sessions", "workflows", "automations"):
+        assert key in counts, f"purge_all_data missing key {key!r}"
+    # Tables should now be empty.
+    for table in ("events", "sessions", "workflows", "automations"):
+        n = _mem.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+        assert n == 0, f"purge_all_data left {n} rows in {table}"
 
     # insert_event.
     db.insert_event(
