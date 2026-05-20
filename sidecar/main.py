@@ -13,6 +13,7 @@ logging.basicConfig(
 import capture
 import db
 import fingerprinter
+import macro_recorder
 import ranker
 import segmenter
 
@@ -82,6 +83,27 @@ def _handle(msg: dict) -> dict | None:
         if not db.delete_workflow(workflow_id):
             return {"type": "error", "message": "workflow not found"}
         return {"type": "ok", "workflow_id": workflow_id}
+
+    if t == "start_recording":
+        workflow_id = msg.get("workflow_id")
+        result = macro_recorder.start_recording(workflow_id)
+        return result
+
+    if t == "stop_recording":
+        result = macro_recorder.stop_recording()
+        return result
+
+    if t == "save_macro":
+        name = msg.get("name", "")
+        workflow_id = msg.get("workflow_id")
+        if not name or not isinstance(name, str):
+            return {"type": "error", "message": "name must be a non-empty string"}
+        result = macro_recorder.save_macro(name, workflow_id)
+        return result
+
+    if t == "get_recording_status":
+        status = macro_recorder.get_recording_status()
+        return {"type": "recording_status", **status}
 
     if t == "get_ranked_workflows":
         return {"type": "ranked_workflows", "data": ranker.get_ranked_workflows()}
