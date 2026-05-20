@@ -13,6 +13,7 @@ logging.basicConfig(
 import capture
 import db
 import fingerprinter
+import llm_explainer
 import macro_recorder
 import playwright_gen
 import ranker
@@ -150,6 +151,24 @@ def _handle(msg: dict) -> dict | None:
         script = playwright_gen.generate_playwright_script(all_events, script_name)
         step_count = script.count("page.")
         return {"type": "playwright_preview", "script": script, "step_count": step_count}
+
+    if t == "check_llm":
+        available = llm_explainer.is_llm_available()
+        backend_val = os.environ.get("PPM_LLM_BACKEND", "").strip().lower() or None
+        return {"type": "llm_status", "available": available, "backend": backend_val if available else None}
+
+    if t == "improve_automation":
+        automation_id = msg.get("automation_id")
+        if not isinstance(automation_id, int):
+            return {"type": "error", "message": "automation_id must be an integer"}
+        result = llm_explainer.improve_automation(automation_id)
+        return {
+            "type": "automation_improved",
+            "automation_id": automation_id,
+            "explanation": result.get("explanation", ""),
+            "ok": result.get("ok", False),
+            "error": result.get("error") if not result.get("ok") else None,
+        }
 
     if t == "get_ranked_workflows":
         return {"type": "ranked_workflows", "data": ranker.get_ranked_workflows()}

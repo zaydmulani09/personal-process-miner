@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Automation, Workflow } from "../lib/types";
+import ImproveScriptModal from "./ImproveScriptModal";
 import MacroRecorder from "./MacroRecorder";
 import ScriptPreviewModal from "./ScriptPreviewModal";
 
@@ -19,13 +20,16 @@ function parseSteps(stepsJson: string): string[] {
 
 interface Props {
   workflow: Workflow;
+  automation?: Automation;
   onLabel: (workflow: Workflow) => void;
   onDelete: (id: number) => void;
 }
 
-export default function WorkflowCard({ workflow, onLabel, onDelete }: Props) {
+export default function WorkflowCard({ workflow, automation, onLabel, onDelete }: Props) {
   const [showRecorder, setShowRecorder] = useState(false);
   const [showScriptPreview, setShowScriptPreview] = useState(false);
+  const [showImprove, setShowImprove] = useState(false);
+  const [currentAutomation, setCurrentAutomation] = useState<Automation | undefined>(automation);
   const steps = parseSteps(workflow.steps);
   const isLabeled = workflow.is_labeled === 1;
 
@@ -132,6 +136,23 @@ export default function WorkflowCard({ workflow, onLabel, onDelete }: Props) {
           >
             Generate Script
           </button>
+          {currentAutomation && (
+            <button
+              onClick={() => setShowImprove(true)}
+              style={{
+                padding: "6px 14px",
+                fontSize: 13,
+                borderRadius: 6,
+                border: "1px solid #c4b5fd",
+                background: "#f5f3ff",
+                color: "#7c3aed",
+                cursor: "pointer",
+                boxShadow: "none",
+              }}
+            >
+              ✨ Improve
+            </button>
+          )}
           <button
             onClick={handleDelete}
             style={{
@@ -165,6 +186,17 @@ export default function WorkflowCard({ workflow, onLabel, onDelete }: Props) {
           workflowName={workflow.name || "Unnamed"}
           onSaved={() => setShowScriptPreview(false)}
           onClose={() => setShowScriptPreview(false)}
+        />
+      )}
+
+      {showImprove && currentAutomation && (
+        <ImproveScriptModal
+          automation={currentAutomation}
+          onImproved={(updated) => {
+            setCurrentAutomation(updated);
+            setShowImprove(false);
+          }}
+          onClose={() => setShowImprove(false)}
         />
       )}
     </>

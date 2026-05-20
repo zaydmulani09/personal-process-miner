@@ -366,3 +366,22 @@ def get_automations() -> list[dict]:
     with _lock:
         rows = conn.execute("SELECT * FROM automations").fetchall()
     return [dict(row) for row in rows]
+
+
+def get_automation_by_id(automation_id: int) -> dict | None:
+    conn = _get_conn()
+    with _lock:
+        row = conn.execute(
+            "SELECT * FROM automations WHERE id = ?", (automation_id,)
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def update_automation_script(automation_id: int, script_body: str) -> None:
+    conn = _get_conn()
+    with _lock:
+        conn.execute(
+            "UPDATE automations SET script_body = ? WHERE id = ?",
+            (script_body, automation_id),
+        )
+        conn.commit()
