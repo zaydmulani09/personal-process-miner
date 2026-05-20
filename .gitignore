@@ -2,6 +2,7 @@
 logs
 *.log
 sidecar/sidecar.log
+data/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*

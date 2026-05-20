@@ -1,4 +1,4 @@
-"""Standalone IPC smoke-test — run with: python sidecar/test_ipc.py"""
+"""Standalone IPC smoke-test — run with: py sidecar/test_ipc.py"""
 import json
 import subprocess
 import sys
@@ -39,10 +39,23 @@ def main() -> None:
         resp = _send(proc, {"type": "doesnotexist"})
         assert resp.get("type") == "error", f"unknown-cmd failed: {resp}"
 
+        # start_capture → ok
+        resp = _send(proc, {"type": "start_capture"})
+        assert resp == {"type": "ok", "message": "capture started"}, f"start_capture failed: {resp}"
+
+        # get_events → events list
+        resp = _send(proc, {"type": "get_events", "limit": 5})
+        assert resp.get("type") == "events", f"get_events type failed: {resp}"
+        assert isinstance(resp.get("data"), list), f"get_events data not list: {resp}"
+
+        # stop_capture → ok
+        resp = _send(proc, {"type": "stop_capture"})
+        assert resp == {"type": "ok", "message": "capture stopped"}, f"stop_capture failed: {resp}"
+
         # shutdown → clean exit
         resp = _send(proc, {"type": "shutdown"})
         assert resp.get("type") == "ok", f"shutdown ack failed: {resp}"
-        proc.wait(timeout=3)
+        proc.wait(timeout=5)
         assert proc.returncode == 0, f"exit code {proc.returncode}"
 
     except Exception as exc:
