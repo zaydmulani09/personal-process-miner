@@ -13,6 +13,7 @@ logging.basicConfig(
 import capture
 import db
 import fingerprinter
+import ranker
 import segmenter
 
 
@@ -59,6 +60,12 @@ def _handle(msg: dict) -> dict | None:
     if t == "run_fingerprinting":
         patterns = fingerprinter.run_fingerprinting()
         return {"type": "fingerprinting_complete", "pattern_count": len(patterns), "patterns": patterns}
+
+    if t == "get_ranked_workflows":
+        return {"type": "ranked_workflows", "data": ranker.get_ranked_workflows()}
+
+    if t == "get_summary_stats":
+        return {"type": "summary_stats", "data": ranker.get_summary_stats()}
 
     if t == "shutdown":
         logging.info("Shutdown received — stopping capture and exiting")

@@ -41,7 +41,9 @@ personal-process-miner/
 │   ├── test_db.py         # DB layer test (in-memory)
 │   ├── test_fingerprinter.py  # fingerprinter unit tests (7 cases)
 │   ├── test_ipc.py        # IPC smoke-test
-│   └── test_segmenter.py  # segmenter unit tests
+│   ├── test_ranker.py     # ranker unit tests (5 cases)
+│   ├── test_segmenter.py  # segmenter unit tests
+│   └── ranker.py          # workflow scoring, time-wasted stats, summary aggregation
 ├── src/
 │   ├── App.tsx
 │   ├── App.css
@@ -82,7 +84,7 @@ personal-process-miner/
 | P4 | SQLite schema & migrations + seed data | complete |
 | P5 | Session segmenter (idle gap, midnight boundary, max-length) | complete |
 | P6 | Sequence fingerprinter (sliding window + edit-distance fuzzy dedup) | complete |
-| P7 | | pending |
+| P7 | Pattern ranker & stats (scoring, time-wasted, summary aggregation) | complete |
 | P8 | | pending |
 | P9 | | pending |
 | P10 | | pending |
@@ -101,12 +103,13 @@ personal-process-miner/
 
 ## Test Count
 
-6 scripts:
+7 scripts:
 - `sidecar/test_ipc.py` — IPC smoke-test (10 assertions)
 - `sidecar/test_capture.py` — capture + DB file smoke-test
 - `sidecar/test_db.py` — DB layer test on in-memory SQLite (all tables, all helpers)
 - `sidecar/test_segmenter.py` — segmenter unit tests (5 cases: idle gap, midnight, dominant app, empty/single, live DB)
 - `sidecar/test_fingerprinter.py` — fingerprinter unit tests (7 cases: extract, windows, stability, edit distance, find_patterns freq, min-freq filter, live DB)
+- `sidecar/test_ranker.py` — ranker unit tests (5 cases: score_workflow, ordering, human formatting, live DB summary, empty list)
 - `sidecar/seed.py` — not a test, but verifies seeder runs clean (59 rows)
 
 ## Known Issues
