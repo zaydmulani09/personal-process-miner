@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { sendToSidecar } from "../lib/sidecar";
 import { Automation } from "../lib/types";
 
 interface Props {
@@ -7,6 +8,10 @@ interface Props {
   onDelete: (id: number) => void;
   onRename: (id: number, name: string) => void;
 }
+
+type Frequency = "daily" | "weekly" | "hourly";
+
+const DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 
 function timeAgo(isoString: string | null): string {
   if (!isoString) return "Never";
@@ -23,6 +28,12 @@ function scriptPreview(body: string): string {
   return lines.length > 3 ? preview + "\n..." : preview;
 }
 
+function scheduleInfoLabel(frequency: Frequency, time: string, dayOfWeek: number): string {
+  if (frequency === "hourly") return "Hourly";
+  if (frequency === "weekly") return `Weekly on ${DAY_NAMES[dayOfWeek]} at ${time}`;
+  return `Daily at ${time}`;
+}
+
 export default function AutomationCard({
   automation,
   onRun,
@@ -32,6 +43,13 @@ export default function AutomationCard({
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState(automation.name);
   const [isRunning, setIsRunning] = useState(false);
+  const [showSchedule, setShowSchedule] = useState(false);
+  const [frequency, setFrequency] = useState<Frequency>("daily");
+  const [schedTime, setSchedTime] = useState("09:00");
+  const [dayOfWeek, setDayOfWeek] = useState(0);
+  const [schedMsg, setSchedMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [isScheduled, setIsScheduled] = useState(automation.scheduled ?? false);
+  const [scheduleInfo, setScheduleInfo] = useState(automation.schedule_info ?? "");
   const inputRef = useRef<HTMLInputElement>(null);
 
   const isPlaywright = automation.script_type === "playwright";
@@ -74,6 +92,50 @@ export default function AutomationCard({
     }
   };
 
+  const handleSetSchedule = async () => {
+    setSchedMsg(null);
+    try {
+      const resp = (await sendToSidecar({
+        type: "schedule_automation",
+        automation_id: automation.id,
+        schedule: {
+          frequency,
+          time: schedTime,
+          day_of_week: frequency === "weekly" ? dayOfWeek : null,
+        },
+      })) as { ok: boolean; error?: string };
+      if (resp.ok) {
+        const label = scheduleInfoLabel(frequency, schedTime, dayOfWeek);
+        setIsScheduled(true);
+        setScheduleInfo(label);
+        setSchedMsg({ ok: true, text: `Scheduled: ${label}` });
+      } else {
+        setSchedMsg({ ok: false, text: resp.error ?? "Failed to schedule" });
+      }
+    } catch (e) {
+      setSchedMsg({ ok: false, text: String(e) });
+    }
+  };
+
+  const handleRemoveSchedule = async () => {
+    setSchedMsg(null);
+    try {
+      const resp = (await sendToSidecar({
+        type: "unschedule_automation",
+        automation_id: automation.id,
+      })) as { ok: boolean; error?: string };
+      if (resp.ok) {
+        setIsScheduled(false);
+        setScheduleInfo("");
+        setSchedMsg({ ok: true, text: "Schedule removed" });
+      } else {
+        setSchedMsg({ ok: false, text: resp.error ?? "Failed to remove schedule" });
+      }
+    } catch (e) {
+      setSchedMsg({ ok: false, text: String(e) });
+    }
+  };
+
   const statusDot = () => {
     if (!automation.last_run_status) return { color: "#94a3b8", symbol: "—" };
     if (automation.last_run_status === "success")
@@ -81,6 +143,15 @@ export default function AutomationCard({
     return { color: "#dc2626", symbol: "✗" };
   };
   const dot = statusDot();
+
+  const selectStyle: React.CSSProperties = {
+    fontSize: 13,
+    padding: "5px 8px",
+    borderRadius: 6,
+    border: "1px solid #e2e8f0",
+    background: "#fff",
+    cursor: "pointer",
+  };
 
   return (
     <div
@@ -150,6 +221,24 @@ export default function AutomationCard({
         >
           {isPlaywright ? "Playwright" : "PyAutoGUI"}
         </span>
+
+        {/* Schedule badge */}
+        {isScheduled && (
+          <span
+            style={{
+              fontSize: 11,
+              fontWeight: 600,
+              padding: "2px 8px",
+              borderRadius: 12,
+              background: "#fef9c3",
+              color: "#854d0e",
+              flexShrink: 0,
+            }}
+            title={scheduleInfo}
+          >
+            ⏰ {scheduleInfo || "Scheduled"}
+          </span>
+        )}
       </div>
 
       {/* Stats row */}
@@ -198,7 +287,7 @@ export default function AutomationCard({
       )}
 
       {/* Action buttons */}
-      <div style={{ display: "flex", gap: 8 }}>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
         <button
           onClick={handleRun}
           disabled={isRunning}
@@ -236,6 +325,21 @@ export default function AutomationCard({
           )}
         </button>
         <button
+          onClick={() => { setShowSchedule((v) => !v); setSchedMsg(null); }}
+          style={{
+            padding: "6px 14px",
+            fontSize: 13,
+            borderRadius: 6,
+            border: `1px solid ${showSchedule ? "#f59e0b" : "#fde68a"}`,
+            background: showSchedule ? "#fef3c7" : "#fffbeb",
+            color: "#92400e",
+            cursor: "pointer",
+            boxShadow: "none",
+          }}
+        >
+          ⏰ Schedule
+        </button>
+        <button
           onClick={handleDelete}
           style={{
             padding: "6px 14px",
@@ -251,6 +355,118 @@ export default function AutomationCard({
           🗑 Delete
         </button>
       </div>
+
+      {/* Inline schedule panel */}
+      {showSchedule && (
+        <div
+          style={{
+            marginTop: 14,
+            padding: "14px 16px",
+            border: "1px solid #fde68a",
+            borderRadius: 8,
+            background: "#fffbeb",
+          }}
+        >
+          <div style={{ fontWeight: 600, fontSize: 13, color: "#78350f", marginBottom: 10 }}>
+            Schedule Automation
+          </div>
+
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center", marginBottom: 10 }}>
+            {/* Frequency */}
+            <label style={{ fontSize: 13, color: "#64748b" }}>
+              Frequency{" "}
+              <select
+                value={frequency}
+                onChange={(e) => setFrequency(e.target.value as Frequency)}
+                style={selectStyle}
+              >
+                <option value="daily">Daily</option>
+                <option value="weekly">Weekly</option>
+                <option value="hourly">Hourly</option>
+              </select>
+            </label>
+
+            {/* Time (hidden for hourly) */}
+            {frequency !== "hourly" && (
+              <label style={{ fontSize: 13, color: "#64748b" }}>
+                Time{" "}
+                <input
+                  type="time"
+                  value={schedTime}
+                  onChange={(e) => setSchedTime(e.target.value)}
+                  style={{ ...selectStyle, cursor: "default" }}
+                />
+              </label>
+            )}
+
+            {/* Day of week (weekly only) */}
+            {frequency === "weekly" && (
+              <label style={{ fontSize: 13, color: "#64748b" }}>
+                Day{" "}
+                <select
+                  value={dayOfWeek}
+                  onChange={(e) => setDayOfWeek(Number(e.target.value))}
+                  style={selectStyle}
+                >
+                  {DAY_NAMES.map((d, i) => (
+                    <option key={i} value={i}>{d}</option>
+                  ))}
+                </select>
+              </label>
+            )}
+          </div>
+
+          <div style={{ display: "flex", gap: 8 }}>
+            <button
+              onClick={handleSetSchedule}
+              style={{
+                padding: "6px 14px",
+                fontSize: 13,
+                borderRadius: 6,
+                border: "none",
+                background: "#f59e0b",
+                color: "#fff",
+                cursor: "pointer",
+                boxShadow: "none",
+              }}
+            >
+              Set Schedule
+            </button>
+            {isScheduled && (
+              <button
+                onClick={handleRemoveSchedule}
+                style={{
+                  padding: "6px 14px",
+                  fontSize: 13,
+                  borderRadius: 6,
+                  border: "1px solid #fca5a5",
+                  background: "#fff5f5",
+                  color: "#dc2626",
+                  cursor: "pointer",
+                  boxShadow: "none",
+                }}
+              >
+                Remove Schedule
+              </button>
+            )}
+          </div>
+
+          {schedMsg && (
+            <div
+              style={{
+                marginTop: 10,
+                fontSize: 13,
+                color: schedMsg.ok ? "#15803d" : "#dc2626",
+                fontWeight: 500,
+              }}
+            >
+              {schedMsg.ok ? "✓ " : "✗ "}
+              {schedMsg.text}
+            </div>
+          )}
+        </div>
+      )}
+
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
   );

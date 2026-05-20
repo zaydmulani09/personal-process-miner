@@ -42,4 +42,6 @@ export interface Automation {
   run_count: number;
   last_run_status: string | null;
   created_at: string;
+  scheduled?: boolean;
+  schedule_info?: string; // human-readable, e.g. "Daily at 09:00"
 }

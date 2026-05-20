@@ -36,7 +36,8 @@ personal-process-miner/
 │   ├── db.py              # migrations runner + all schema helpers
 │   ├── main.py            # stdin/stdout JSON IPC daemon
 │   ├── macro_recorder.py  # pynput macro recorder + pyautogui script generator
-│   ├── requirements.txt
+│   ├── requirements.txt   # pynput, pygetwindow, pyautogui, playwright
+│   ├── scheduler.py       # OS-level scheduling (Windows schtasks / Unix crontab)
 │   ├── seed.py            # realistic sample data seeder
 │   ├── fingerprinter.py   # sliding-window sequence detector + fuzzy dedup
 │   ├── llm_explainer.py   # optional LLM script explainer (Ollama/Claude), opt-in via env vars
@@ -50,6 +51,7 @@ personal-process-miner/
 │   ├── test_llm_explainer.py   # LLM explainer unit tests (5 cases, all offline)
 │   ├── test_playwright_gen.py  # playwright generator unit tests (6 cases)
 │   ├── test_ranker.py     # ranker unit tests (5 cases)
+│   ├── test_scheduler.py  # scheduler unit tests (5 tests, 12 assertions)
 │   ├── test_segmenter.py  # segmenter unit tests
 │   └── ranker.py          # workflow scoring, time-wasted stats, summary aggregation
 ├── src/
@@ -66,7 +68,7 @@ personal-process-miner/
 │   │   ├── ActivityHeatmap.tsx    # 12-week session activity grid (plain CSS grid, hover tooltip)
 │   │   ├── StatsBar.tsx           # 4-metric responsive stats cards
 │   │   ├── CaptureControls.tsx    # start/stop capture toggle + analyze-now sequence
-│   │   ├── AutomationCard.tsx     # card with inline rename, type badge, stats, script preview, run/delete
+│   │   ├── AutomationCard.tsx     # card with inline rename, type badge, stats, script preview, run/schedule/delete
 │   │   ├── ImproveScriptModal.tsx # LLM improve modal: setup instructions or AI improvement flow
 │   │   ├── MacroRecorder.tsx      # recording modal: start/stop/save/discard + live event count
 │   │   └── ScriptPreviewModal.tsx # playwright script preview: load, edit name, save/close
@@ -113,7 +115,7 @@ personal-process-miner/
 | P11 | Playwright script generator (browser event detection, preview modal, save automation) | complete |
 | P12 | LLM script explainer (Ollama/Claude backends, improve automation, opt-in via env vars) | complete |
 | P13 | Automation library UI (run, rename, delete, stats, Automations page + nav) | complete |
-| P14 | | pending |
+| P14 | One-click run hardening, safety checks, OS-level task scheduling | complete |
 | P15 | | pending |
 | P16 | | pending |
 | P17 | | pending |
@@ -125,18 +127,17 @@ personal-process-miner/
 
 ## Test Count
 
-7 scripts:
-- `sidecar/test_ipc.py` — IPC smoke-test (10 assertions)
+8 scripts:
+- `sidecar/test_ipc.py` — IPC smoke-test (14 assertions including label/delete/run/update/stats)
 - `sidecar/test_capture.py` — capture + DB file smoke-test
 - `sidecar/test_db.py` — DB layer test on in-memory SQLite (all tables, all helpers)
 - `sidecar/test_segmenter.py` — segmenter unit tests (5 cases: idle gap, midnight, dominant app, empty/single, live DB)
 - `sidecar/test_fingerprinter.py` — fingerprinter unit tests (7 cases: extract, windows, stability, edit distance, find_patterns freq, min-freq filter, live DB)
 - `sidecar/test_ranker.py` — ranker unit tests (5 cases: score_workflow, ordering, human formatting, live DB summary, empty list)
-- `sidecar/test_ipc.py` now includes label_workflow and delete_workflow IPC tests (14 total assertions)
 - `sidecar/test_macro_recorder.py` — macro recorder unit tests (5 cases: start/stop, double-start guard, script generation, empty script, save_macro file+DB)
 - `sidecar/test_playwright_gen.py` — playwright generator unit tests (6 cases: is_browser_event, extract_url_from_title, classify_event, group_keystrokes, no-browser-events script, full script structure)
-- `sidecar/test_llm_explainer.py` — LLM explainer unit tests (5 cases: backend empty, invalid Ollama URL, disabled explain_script, fence stripping, get/update automation by id — all offline, no live LLM required)
-- `sidecar/test_ipc.py` now includes automation management tests: run_automation, update_automation_name, delete_automation (valid + nonexistent), get_automation_stats — 5 new assertions (requires test_macro_recorder.py to have run first to seed an automation)
+- `sidecar/test_llm_explainer.py` — LLM explainer unit tests (5 cases: backend empty, invalid Ollama URL, disabled explain_script, fence stripping, get/update automation by id — all offline)
+- `sidecar/test_scheduler.py` — scheduler unit tests (5 tests, 12 assertions: get_platform, schedule/unschedule Windows, list_scheduled, is_script_safe)
 - `sidecar/seed.py` — not a test, but verifies seeder runs clean (59 rows)
 
 ## Known Issues
@@ -165,6 +166,10 @@ None.
 - **`delete_automation` reconstructs script path from name slug**: The `automations` table has no `script_path` column. The file path is reconstructed from the automation name using the same slug logic as `save_macro` / `save_playwright_script`. If the file was renamed or moved, deletion silently succeeds (row deleted, file skip).
 - **`estimated_time_saved_seconds` = total_runs × 120**: A fixed 2-minute-per-run estimate. No actual timing is tracked; this is a motivational heuristic, not a measurement.
 - **Automations page nav uses local `page` state in `App.tsx`**: Simple `useState<"dashboard" | "automations">` swap — no router needed at this scale.
+- **`is_script_safe` exported from `main.py`**: Extracted as a module-level function (not a nested helper) so `test_scheduler.py` can import it directly for Test 5.
+- **`schedule_automation` writes a persistent `.py` to `data/macros/`**: The IPC handler writes `{name_slug}_sched.py` before calling `scheduler.schedule_automation` so the OS scheduler has a durable script path to invoke. The temp-file approach used for interactive runs is not suitable for scheduled tasks.
+- **`scheduler.py` uses `schtasks` on Windows**: Windows Task Scheduler is invoked via `schtasks /create` with `/f` (force overwrite). Weekly schedules pass `/d {MON..SUN}`. The task name prefix `PPM_` separates app-managed tasks from system ones.
+- **`scheduled` / `schedule_info` fields are client-side only**: The `automations` DB table has no scheduling columns. `AutomationCard` tracks `isScheduled` / `scheduleInfo` in local React state after a successful `schedule_automation` response. A page refresh will show the badge as unscheduled until the backend returns schedule state (deferred to a later prompt with a `get_scheduled_info` IPC call).
 - **Navigation: left sidebar**: Chose 200px dark left sidebar (`#1e293b`) over top bar. Desktop-app layout with sidebar scales better as more pages are added in later prompts.
 - **recharts installed but unused in P9**: `recharts` installed as specified; heatmap uses plain CSS grid per spec. Will be used in a later prompt.
 - **App.css imported in main.tsx**: Added `import "./App.css"` to `src/main.tsx` — it was missing from the scaffold, which would have prevented CSS variables and skeleton animation from loading.

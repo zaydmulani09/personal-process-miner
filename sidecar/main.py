@@ -19,7 +19,18 @@ import llm_explainer
 import macro_recorder
 import playwright_gen
 import ranker
+import scheduler
 import segmenter
+
+_UNSAFE_PATTERNS = ["os.system", "subprocess", "shutil.rmtree", "__import__"]
+
+
+def is_script_safe(script_body: str) -> bool:
+    """Return False if script_body contains any known-dangerous patterns."""
+    for pattern in _UNSAFE_PATTERNS:
+        if pattern in script_body:
+            return False
+    return True
 
 
 def _write(msg: dict) -> None:
@@ -163,6 +174,20 @@ def _handle(msg: dict) -> dict | None:
             if automation is None:
                 return {"type": "error", "message": "automation not found"}
             script_body = automation.get("script_body") or ""
+            script_type = automation.get("script_type", "pyautogui")
+
+            if not is_script_safe(script_body):
+                return {
+                    "type": "run_result",
+                    "automation_id": automation_id,
+                    "status": "error",
+                    "script_type": script_type,
+                    "stdout": "",
+                    "stderr": "Script contains unsafe patterns and was not executed",
+                }
+
+            timeout = 120 if script_type == "playwright" else 60
+            _project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
             tmp_path = None
             try:
                 with tempfile.NamedTemporaryFile(
@@ -174,7 +199,8 @@ def _handle(msg: dict) -> dict | None:
                     ["py", tmp_path],
                     capture_output=True,
                     text=True,
-                    timeout=60,
+                    timeout=timeout,
+                    cwd=_project_root,
                 )
                 run_status = "success" if result.returncode == 0 else "error"
                 stdout = result.stdout
@@ -182,7 +208,7 @@ def _handle(msg: dict) -> dict | None:
             except subprocess.TimeoutExpired:
                 run_status = "error"
                 stdout = ""
-                stderr = "Script timed out after 60 seconds"
+                stderr = f"Script timed out after {timeout} seconds"
             finally:
                 if tmp_path and os.path.exists(tmp_path):
                     try:
@@ -194,6 +220,7 @@ def _handle(msg: dict) -> dict | None:
                 "type": "run_result",
                 "automation_id": automation_id,
                 "status": run_status,
+                "script_type": script_type,
                 "stdout": stdout,
                 "stderr": stderr,
             }
@@ -266,6 +293,53 @@ def _handle(msg: dict) -> dict | None:
 
     if t == "get_summary_stats":
         return {"type": "summary_stats", "data": ranker.get_summary_stats()}
+
+    if t == "schedule_automation":
+        automation_id = msg.get("automation_id")
+        schedule = msg.get("schedule", {})
+        if not isinstance(automation_id, int):
+            return {"type": "error", "message": "automation_id must be an integer"}
+        automation = db.get_automation_by_id(automation_id)
+        if automation is None:
+            return {"type": "error", "message": "automation not found"}
+        name = automation.get("name", f"automation_{automation_id}")
+        script_body = automation.get("script_body", "")
+        # Write script to macros dir for persistent scheduling
+        _macros_dir = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), "..", "data", "macros"
+        )
+        os.makedirs(_macros_dir, exist_ok=True)
+        name_slug = "".join(
+            c if (c.isalnum() or c == "_") else "_"
+            for c in name.lower().replace(" ", "_")
+        )
+        script_path = os.path.abspath(os.path.join(_macros_dir, f"{name_slug}_sched.py"))
+        try:
+            with open(script_path, "w", encoding="utf-8") as f:
+                f.write(script_body)
+        except OSError as e:
+            return {"type": "error", "message": f"Could not write script: {e}"}
+        result = scheduler.schedule_automation(automation_id, name_slug, script_path, schedule)
+        return {"type": "schedule_result", **result}
+
+    if t == "unschedule_automation":
+        automation_id = msg.get("automation_id")
+        if not isinstance(automation_id, int):
+            return {"type": "error", "message": "automation_id must be an integer"}
+        automation = db.get_automation_by_id(automation_id)
+        if automation is None:
+            return {"type": "error", "message": "automation not found"}
+        name = automation.get("name", f"automation_{automation_id}")
+        name_slug = "".join(
+            c if (c.isalnum() or c == "_") else "_"
+            for c in name.lower().replace(" ", "_")
+        )
+        result = scheduler.unschedule_automation(name_slug)
+        return {"type": "unschedule_result", **result}
+
+    if t == "list_scheduled":
+        data = scheduler.list_scheduled()
+        return {"type": "scheduled_list", "data": data}
 
     if t == "shutdown":
         logging.info("Shutdown received — stopping capture and exiting")
