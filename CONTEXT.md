@@ -75,6 +75,7 @@ personal-process-miner/
 │   └── pages/
 │       ├── Automations.tsx  # automation library: stats bar, filter toggles, AutomationCard list
 │       ├── Dashboard.tsx    # full dashboard: summary cards, workflow list, modal management
+│       ├── Onboarding.tsx   # first-run wizard: welcome, permission, privacy, demo, done (steps 0-4)
 │       └── Settings.tsx     # privacy controls: capture toggles, app blocklist, retention, purge
 ├── src-tauri/
 │   ├── src/
@@ -118,7 +119,7 @@ personal-process-miner/
 | P13 | Automation library UI (run, rename, delete, stats, Automations page + nav) | complete |
 | P14 | One-click run hardening, safety checks, OS-level task scheduling | complete |
 | P15 | Privacy controls: settings page, app blocklist, data retention, purge | complete |
-| P16 | | pending |
+| P16 | First-run onboarding wizard: permission check, demo recording, privacy explainer | complete |
 | P17 | | pending |
 | P18 | | pending |
 | P19 | | pending |
@@ -129,7 +130,7 @@ personal-process-miner/
 ## Test Count
 
 8 scripts (updated test_db.py + test_ipc.py with privacy tests):
-- `sidecar/test_ipc.py` — IPC smoke-test (20 assertions: prev 14 + get_settings, set_setting, add/get/remove blocklist)
+- `sidecar/test_ipc.py` — IPC smoke-test (27 assertions: prev 20 + get_onboarding_state, set_onboarding_step, check_accessibility, set_onboarding_complete)
 - `sidecar/test_capture.py` — capture + DB file smoke-test
 - `sidecar/test_db.py` — DB layer test on in-memory SQLite (all tables, all helpers; +5 privacy: migration 5, get/set_setting, get_all_settings, purge_all_data, purge_old_events zero-retention)
 - `sidecar/test_segmenter.py` — segmenter unit tests (5 cases: idle gap, midnight, dominant app, empty/single, live DB)
@@ -170,6 +171,11 @@ None.
 - **`is_script_safe` exported from `main.py`**: Extracted as a module-level function (not a nested helper) so `test_scheduler.py` can import it directly for Test 5.
 - **`schedule_automation` writes a persistent `.py` to `data/macros/`**: The IPC handler writes `{name_slug}_sched.py` before calling `scheduler.schedule_automation` so the OS scheduler has a durable script path to invoke. The temp-file approach used for interactive runs is not suitable for scheduled tasks.
 - **`scheduler.py` uses `schtasks` on Windows**: Windows Task Scheduler is invoked via `schtasks /create` with `/f` (force overwrite). Weekly schedules pass `/d {MON..SUN}`. The task name prefix `PPM_` separates app-managed tasks from system ones.
+- **`onboarding_complete` / `onboarding_step` seeded in `privacy_settings`**: No new migration; uses `INSERT OR IGNORE` in the existing migration 5 seed block. `_DEFAULT_SETTINGS` dict extended.
+- **Step 1 (permission check) auto-passes on Windows/Linux**: `check_accessibility` IPC returns `granted: true` immediately. Frontend auto-advances after 800ms showing "✓ Ready". macOS path tests pynput listener creation.
+- **Allowlist has no UI (known debt)**: `allowlist_apps` is wired in `capture.py` but Settings page only exposes blocklist. Documented for P17+.
+- **`open` → `openUrl` in plugin-opener**: Tauri v2 `@tauri-apps/plugin-opener` exports `openUrl`, not `open`. Build error fixed.
+- **Onboarding wizard renders full-screen**: No sidebar/nav. `App.tsx` renders `<Onboarding>` instead of the entire shell layout when `onboarding_complete == false`. Loading spinner prevents flash of wrong content.
 - **Migration 5 adds `privacy_settings` table**: 5 default settings seeded via `INSERT OR IGNORE` in `run_migrations` after all migrations applied. Safe to re-run.
 - **Privacy settings loaded once at `start_capture()`**: `_blocklist`, `_allowlist`, `_capture_keystrokes`, `_capture_mouse_moves` module-level vars updated on each `start_capture()` call. No mid-session reload.
 - **`capture_mouse_moves` setting present but no mouse-move events were stored before P15**: pynput `on_move` callback was absent in earlier code; setting now controls whether callback is attached. `on_move=None` passed when disabled.

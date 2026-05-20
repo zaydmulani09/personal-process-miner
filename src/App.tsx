@@ -1,7 +1,9 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Automations from "./pages/Automations";
 import Dashboard from "./pages/Dashboard";
+import Onboarding from "./pages/Onboarding";
 import Settings from "./pages/Settings";
+import { sendToSidecar } from "./lib/sidecar";
 
 type Page = "dashboard" | "automations" | "settings";
 
@@ -36,6 +38,54 @@ function NavItem({
 
 export default function App() {
   const [page, setPage] = useState<Page>("dashboard");
+  const [onboardingDone, setOnboardingDone] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    sendToSidecar({ type: "get_onboarding_state" })
+      .then((resp) => {
+        const r = resp as { complete: boolean };
+        setOnboardingDone(r.complete);
+      })
+      .catch(() => setOnboardingDone(true)); // fail-open: show main app
+  }, []);
+
+  const handleOnboardingComplete = () => {
+    setOnboardingDone(true);
+    setPage("dashboard");
+  };
+
+  if (onboardingDone === null) {
+    return (
+      <div
+        style={{
+          height: "100vh",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          fontFamily: "system-ui, sans-serif",
+          color: "#94a3b8",
+          fontSize: 14,
+        }}
+      >
+        <span
+          style={{
+            display: "inline-block",
+            width: 24,
+            height: 24,
+            border: "3px solid #e2e8f0",
+            borderTopColor: "#3b82f6",
+            borderRadius: "50%",
+            animation: "spin 0.8s linear infinite",
+          }}
+        />
+        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      </div>
+    );
+  }
+
+  if (!onboardingDone) {
+    return <Onboarding onComplete={handleOnboardingComplete} />;
+  }
 
   return (
     <div
