@@ -69,6 +69,7 @@ personal-process-miner/
 │   │   ├── StatsBar.tsx           # 4-metric responsive stats cards
 │   │   ├── CaptureControls.tsx    # start/stop capture toggle + analyze-now sequence
 │   │   ├── AutomationCard.tsx     # card with inline rename, type badge, stats, script preview, run/schedule/delete
+│   │   ├── InsightsCard.tsx       # screenshot-ready 600px dark card: hero stat, top-3 workflows, branding
 │   │   ├── ImproveScriptModal.tsx # LLM improve modal: setup instructions or AI improvement flow
 │   │   ├── MacroRecorder.tsx      # recording modal: start/stop/save/discard + live event count
 │   │   └── ScriptPreviewModal.tsx # playwright script preview: load, edit name, save/close
@@ -76,6 +77,7 @@ personal-process-miner/
 │       ├── Automations.tsx  # automation library: stats bar, filter toggles, AutomationCard list
 │       ├── Dashboard.tsx    # full dashboard: summary cards, workflow list, modal management
 │       ├── Onboarding.tsx   # first-run wizard: welcome, permission, privacy, demo, done (steps 0-4)
+│       ├── ShareInsights.tsx # share page: InsightsCard + copy/refresh buttons + OS screenshot tip
 │       └── Settings.tsx     # privacy controls: capture toggles, app blocklist, retention, purge
 ├── src-tauri/
 │   ├── src/
@@ -120,7 +122,7 @@ personal-process-miner/
 | P14 | One-click run hardening, safety checks, OS-level task scheduling | complete |
 | P15 | Privacy controls: settings page, app blocklist, data retention, purge | complete |
 | P16 | First-run onboarding wizard: permission check, demo recording, privacy explainer | complete |
-| P17 | | pending |
+| P17 | Shareable insights card with weekly stats and top workflows | complete |
 | P18 | | pending |
 | P19 | | pending |
 | P20 | | pending |
@@ -130,7 +132,7 @@ personal-process-miner/
 ## Test Count
 
 8 scripts (updated test_db.py + test_ipc.py with privacy tests):
-- `sidecar/test_ipc.py` — IPC smoke-test (27 assertions: prev 20 + get_onboarding_state, set_onboarding_step, check_accessibility, set_onboarding_complete)
+- `sidecar/test_ipc.py` — IPC smoke-test (34 assertions: prev 27 + get_summary_stats 6 keys, get_ranked_workflows type+list, per-workflow score+time_wasted_human)
 - `sidecar/test_capture.py` — capture + DB file smoke-test
 - `sidecar/test_db.py` — DB layer test on in-memory SQLite (all tables, all helpers; +5 privacy: migration 5, get/set_setting, get_all_settings, purge_all_data, purge_old_events zero-retention)
 - `sidecar/test_segmenter.py` — segmenter unit tests (5 cases: idle gap, midnight, dominant app, empty/single, live DB)
@@ -171,6 +173,10 @@ None.
 - **`is_script_safe` exported from `main.py`**: Extracted as a module-level function (not a nested helper) so `test_scheduler.py` can import it directly for Test 5.
 - **`schedule_automation` writes a persistent `.py` to `data/macros/`**: The IPC handler writes `{name_slug}_sched.py` before calling `scheduler.schedule_automation` so the OS scheduler has a durable script path to invoke. The temp-file approach used for interactive runs is not suitable for scheduled tasks.
 - **`scheduler.py` uses `schtasks` on Windows**: Windows Task Scheduler is invoked via `schtasks /create` with `/f` (force overwrite). Weekly schedules pass `/d {MON..SUN}`. The task name prefix `PPM_` separates app-managed tasks from system ones.
+- **InsightsCard uses hardcoded colors, not CSS vars**: card must look identical regardless of OS dark/light mode since it's designed for screenshotting. Width fixed at 600px.
+- **No html2canvas**: Tauri WebView doesn't expose clipboard image write without a custom Rust command. "📋 Copy as Image" button shows the OS screenshot tip instead (Win+Shift+S / Cmd+Shift+4). Deferred to P18+ if a proper clipboard image API is needed.
+- **GitHub URL hardcoded**: `github.com/zaydmulani09/personal-process-miner` read from `git remote get-url origin`.
+- **weekLabel computed client-side**: Monday of current week via JS `Date` arithmetic; no backend call needed.
 - **`onboarding_complete` / `onboarding_step` seeded in `privacy_settings`**: No new migration; uses `INSERT OR IGNORE` in the existing migration 5 seed block. `_DEFAULT_SETTINGS` dict extended.
 - **Step 1 (permission check) auto-passes on Windows/Linux**: `check_accessibility` IPC returns `granted: true` immediately. Frontend auto-advances after 800ms showing "✓ Ready". macOS path tests pynput listener creation.
 - **Allowlist has no UI (known debt)**: `allowlist_apps` is wired in `capture.py` but Settings page only exposes blocklist. Documented for P17+.

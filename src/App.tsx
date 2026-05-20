@@ -3,9 +3,10 @@ import Automations from "./pages/Automations";
 import Dashboard from "./pages/Dashboard";
 import Onboarding from "./pages/Onboarding";
 import Settings from "./pages/Settings";
+import ShareInsights from "./pages/ShareInsights";
 import { sendToSidecar } from "./lib/sidecar";
 
-type Page = "dashboard" | "automations" | "settings";
+type Page = "dashboard" | "automations" | "settings" | "share";
 
 function NavItem({
   label,
@@ -138,6 +139,11 @@ export default function App() {
           active={page === "settings"}
           onClick={() => setPage("settings")}
         />
+        <NavItem
+          label="↗ Share"
+          active={page === "share"}
+          onClick={() => setPage("share")}
+        />
       </aside>
 
       <main
@@ -151,8 +157,10 @@ export default function App() {
           <Dashboard />
         ) : page === "automations" ? (
           <Automations />
-        ) : (
+        ) : page === "settings" ? (
           <Settings onNavigate={(p) => setPage(p as Page)} />
+        ) : (
+          <ShareInsights />
         )}
       </main>
     </div>
