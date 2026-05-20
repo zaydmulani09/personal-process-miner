@@ -10,6 +10,9 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)s %(message)s",
 )
 
+import capture
+import db
+
 
 def _write(msg: dict) -> None:
     sys.stdout.write(json.dumps(msg) + "\n")
@@ -18,14 +21,32 @@ def _write(msg: dict) -> None:
 
 def _handle(msg: dict) -> dict | None:
     t = msg.get("type")
+
     if t == "ping":
         return {"type": "pong"}
+
     if t == "status":
         return {"type": "status", "state": "running"}
+
+    if t == "start_capture":
+        capture.start_capture()
+        return {"type": "ok", "message": "capture started"}
+
+    if t == "stop_capture":
+        capture.stop_capture()
+        return {"type": "ok", "message": "capture stopped"}
+
+    if t == "get_events":
+        limit = msg.get("limit", 100)
+        events = db.get_recent_events(limit=limit)
+        return {"type": "events", "data": events}
+
     if t == "shutdown":
-        logging.info("Shutdown received — exiting")
+        logging.info("Shutdown received — stopping capture and exiting")
+        capture.stop_capture()
         _write({"type": "ok", "message": "shutting down"})
         sys.exit(0)
+
     return {"type": "error", "message": "unknown command"}
 
 
