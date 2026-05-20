@@ -12,6 +12,7 @@ logging.basicConfig(
 
 import capture
 import db
+import fingerprinter
 import segmenter
 
 
@@ -54,6 +55,10 @@ def _handle(msg: dict) -> dict | None:
     if t == "run_segmentation":
         sessions = segmenter.run_segmentation()
         return {"type": "segmentation_complete", "session_count": len(sessions), "sessions": sessions}
+
+    if t == "run_fingerprinting":
+        patterns = fingerprinter.run_fingerprinting()
+        return {"type": "fingerprinting_complete", "pattern_count": len(patterns), "patterns": patterns}
 
     if t == "shutdown":
         logging.info("Shutdown received — stopping capture and exiting")
