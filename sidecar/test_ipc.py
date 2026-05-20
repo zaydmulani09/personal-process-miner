@@ -158,6 +158,32 @@ def main() -> None:
         resp = _send(proc, {"type": "get_blocklist"})
         assert "test_app_xyz" not in resp.get("apps", []), f"blocklist still has removed app: {resp}"
 
+        # --- Onboarding IPC tests ---
+
+        # get_onboarding_state → type: onboarding_state, has complete + step
+        resp = _send(proc, {"type": "get_onboarding_state"})
+        assert resp.get("type") == "onboarding_state", f"get_onboarding_state type failed: {resp}"
+        assert isinstance(resp.get("complete"), bool), f"complete must be bool: {resp}"
+        assert isinstance(resp.get("step"), int), f"step must be int: {resp}"
+
+        # set_onboarding_step → ok; get_onboarding_state reflects step
+        resp = _send(proc, {"type": "set_onboarding_step", "step": 2})
+        assert resp.get("type") == "ok", f"set_onboarding_step failed: {resp}"
+        resp = _send(proc, {"type": "get_onboarding_state"})
+        assert resp.get("step") == 2, f"step not updated to 2: {resp}"
+
+        # check_accessibility → type: accessibility_status with granted + platform
+        resp = _send(proc, {"type": "check_accessibility"})
+        assert resp.get("type") == "accessibility_status", f"check_accessibility type failed: {resp}"
+        assert "granted" in resp, f"accessibility_status missing 'granted': {resp}"
+        assert "platform" in resp, f"accessibility_status missing 'platform': {resp}"
+
+        # set_onboarding_complete → ok
+        resp = _send(proc, {"type": "set_onboarding_complete"})
+        assert resp.get("type") == "ok", f"set_onboarding_complete failed: {resp}"
+        resp = _send(proc, {"type": "get_onboarding_state"})
+        assert resp.get("complete") is True, f"complete not True after set: {resp}"
+
         # shutdown → clean exit
         resp = _send(proc, {"type": "shutdown"})
         assert resp.get("type") == "ok", f"shutdown ack failed: {resp}"

@@ -96,6 +96,8 @@ _DEFAULT_SETTINGS: dict[str, str] = {
     "retention_days": "30",
     "capture_mouse_moves": "true",
     "capture_keystrokes": "false",
+    "onboarding_complete": "false",
+    "onboarding_step": "0",
 }
 
 

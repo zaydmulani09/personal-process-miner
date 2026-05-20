@@ -294,6 +294,38 @@ def _handle(msg: dict) -> dict | None:
     if t == "get_summary_stats":
         return {"type": "summary_stats", "data": ranker.get_summary_stats()}
 
+    if t == "get_onboarding_state":
+        complete = db.get_setting("onboarding_complete", "false") == "true"
+        step = int(db.get_setting("onboarding_step", "0"))
+        return {"type": "onboarding_state", "complete": complete, "step": step}
+
+    if t == "set_onboarding_complete":
+        db.set_setting("onboarding_complete", "true")
+        return {"type": "ok"}
+
+    if t == "set_onboarding_step":
+        step = msg.get("step", 0)
+        if not isinstance(step, int):
+            return {"type": "error", "message": "step must be an integer"}
+        db.set_setting("onboarding_step", str(step))
+        return {"type": "ok"}
+
+    if t == "check_accessibility":
+        import platform as _platform
+        _os = _platform.system().lower()
+        if _os != "darwin":
+            return {"type": "accessibility_status", "granted": True, "platform": _os if _os in ("windows", "linux") else _os}
+        # macOS: attempt to create keyboard listener; failure = no permission
+        try:
+            from pynput import keyboard as _kb
+            _l = _kb.Listener(on_press=lambda k: None)
+            _l.start()
+            _l.stop()
+            granted = True
+        except Exception:
+            granted = False
+        return {"type": "accessibility_status", "granted": granted, "platform": "darwin"}
+
     if t == "get_settings":
         return {"type": "settings", "data": db.get_all_settings()}
 
