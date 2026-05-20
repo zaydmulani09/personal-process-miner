@@ -5,7 +5,7 @@ import LabelWorkflowModal from "../components/LabelWorkflowModal";
 import StatsBar from "../components/StatsBar";
 import WorkflowCard from "../components/WorkflowCard";
 import { sendToSidecar } from "../lib/sidecar";
-import { Session, SummaryStats, Workflow } from "../lib/types";
+import { Automation, Session, SummaryStats, Workflow } from "../lib/types";
 
 const EMPTY_STATS: SummaryStats = {
   total_workflows: 0,
@@ -27,6 +27,7 @@ function SkeletonCard() {
 
 export default function Dashboard() {
   const [workflows, setWorkflows] = useState<Workflow[]>([]);
+  const [automations, setAutomations] = useState<Automation[]>([]);
   const [stats, setStats] = useState<SummaryStats>(EMPTY_STATS);
   const [sessions, setSessions] = useState<Session[]>([]);
   const [loading, setLoading] = useState(true);
@@ -36,14 +37,16 @@ export default function Dashboard() {
   const fetchData = useCallback(async () => {
     setError("");
     try {
-      const [wfResp, statsResp, sessResp] = await Promise.all([
+      const [wfResp, statsResp, sessResp, autoResp] = await Promise.all([
         sendToSidecar({ type: "get_ranked_workflows" }),
         sendToSidecar({ type: "get_summary_stats" }),
         sendToSidecar({ type: "get_sessions", limit: 500 }),
+        sendToSidecar({ type: "get_automations" }),
       ]);
       setWorkflows((wfResp as { data: Workflow[] }).data ?? []);
       setStats((statsResp as { data: SummaryStats }).data ?? EMPTY_STATS);
       setSessions((sessResp as { data: Session[] }).data ?? []);
+      setAutomations((autoResp as { data: Automation[] }).data ?? []);
     } catch (e) {
       setError(String(e));
     } finally {
@@ -183,6 +186,7 @@ export default function Dashboard() {
           <WorkflowCard
             key={wf.id}
             workflow={wf}
+            automation={automations.find((a) => a.workflow_id === wf.id)}
             onLabel={setActiveWorkflow}
             onDelete={handleDelete}
           />

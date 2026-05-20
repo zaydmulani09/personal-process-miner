@@ -39,6 +39,7 @@ personal-process-miner/
 │   ├── requirements.txt
 │   ├── seed.py            # realistic sample data seeder
 │   ├── fingerprinter.py   # sliding-window sequence detector + fuzzy dedup
+│   ├── llm_explainer.py   # optional LLM script explainer (Ollama/Claude), opt-in via env vars
 │   ├── playwright_gen.py  # rule-based playwright script generator from browser events
 │   ├── segmenter.py       # session segmentation engine
 │   ├── sidecar.log        # runtime log (gitignored)
@@ -46,6 +47,7 @@ personal-process-miner/
 │   ├── test_db.py         # DB layer test (in-memory)
 │   ├── test_fingerprinter.py  # fingerprinter unit tests (7 cases)
 │   ├── test_ipc.py        # IPC smoke-test
+│   ├── test_llm_explainer.py   # LLM explainer unit tests (5 cases, all offline)
 │   ├── test_playwright_gen.py  # playwright generator unit tests (6 cases)
 │   ├── test_ranker.py     # ranker unit tests (5 cases)
 │   ├── test_segmenter.py  # segmenter unit tests
@@ -59,11 +61,12 @@ personal-process-miner/
 │   │   ├── sidecar.ts     # sendToSidecar IPC utility + SidecarError
 │   │   └── types.ts       # Workflow, Session, SummaryStats, Automation types
 │   ├── components/
-│   │   ├── WorkflowCard.tsx       # card with badge, steps pills, stats, name/delete/record/script buttons
+│   │   ├── WorkflowCard.tsx       # card with badge, steps pills, stats, name/delete/record/script/improve buttons
 │   │   ├── LabelWorkflowModal.tsx # modal with editable steps, name input, save/cancel
 │   │   ├── ActivityHeatmap.tsx    # 12-week session activity grid (plain CSS grid, hover tooltip)
 │   │   ├── StatsBar.tsx           # 4-metric responsive stats cards
 │   │   ├── CaptureControls.tsx    # start/stop capture toggle + analyze-now sequence
+│   │   ├── ImproveScriptModal.tsx # LLM improve modal: setup instructions or AI improvement flow
 │   │   ├── MacroRecorder.tsx      # recording modal: start/stop/save/discard + live event count
 │   │   └── ScriptPreviewModal.tsx # playwright script preview: load, edit name, save/close
 │   └── pages/
@@ -106,7 +109,7 @@ personal-process-miner/
 | P9 | Pattern dashboard UI (heatmap, stats bar, capture controls, nav shell) | complete |
 | P10 | Macro recorder (start/stop/save, script generation, UI recording flow) | complete |
 | P11 | Playwright script generator (browser event detection, preview modal, save automation) | complete |
-| P12 | | pending |
+| P12 | LLM script explainer (Ollama/Claude backends, improve automation, opt-in via env vars) | complete |
 | P13 | | pending |
 | P14 | | pending |
 | P15 | | pending |
@@ -130,6 +133,7 @@ personal-process-miner/
 - `sidecar/test_ipc.py` now includes label_workflow and delete_workflow IPC tests (14 total assertions)
 - `sidecar/test_macro_recorder.py` — macro recorder unit tests (5 cases: start/stop, double-start guard, script generation, empty script, save_macro file+DB)
 - `sidecar/test_playwright_gen.py` — playwright generator unit tests (6 cases: is_browser_event, extract_url_from_title, classify_event, group_keystrokes, no-browser-events script, full script structure)
+- `sidecar/test_llm_explainer.py` — LLM explainer unit tests (5 cases: backend empty, invalid Ollama URL, disabled explain_script, fence stripping, get/update automation by id — all offline, no live LLM required)
 - `sidecar/seed.py` — not a test, but verifies seeder runs clean (59 rows)
 
 ## Known Issues
@@ -152,6 +156,8 @@ None.
 - **MacroRecorder modal managed in WorkflowCard**: The `MacroRecorder` modal state (`showRecorder`) is local to `WorkflowCard`, keeping the component self-contained rather than lifting state to Dashboard.
 - **`classify_event` accepts multi-char details**: After `group_keystrokes` merges consecutive keystrokes into a single event with a multi-char `detail` string, `classify_event` must still return "type" for it. Changed the check from `len(inner) == 1` to `inner and not inner.startswith("Key.")` — this correctly classifies both single and merged char events as "type" while still rejecting `Key.space` etc.
 - **Rust borrow lifetime fix in shutdown handler**: The `on_window_event` closure had a borrow issue where the `MutexGuard` (from `try_lock`) could outlive the `state` binding. Fixed by wrapping the `try_lock` in a nested block `{}` that drops the guard before `state` goes out of scope.
+- **LLM feature is opt-in via env vars, disabled by default**: `PPM_LLM_BACKEND` defaults to `""` (disabled). Set to `"ollama"` or `"claude"` to enable. No backend = app works exactly as before. Ollama availability check uses a 1s timeout (reduced from 2s to keep the `is_llm_available()` call fast on Windows).
+- **`✨ Improve` button gated on automation existence**: `Dashboard.tsx` fetches all automations and passes the matching one (by `workflow_id`) as an optional prop to `WorkflowCard`. The button only renders when an automation prop is present, avoiding a schema change to the `Workflow` type.
 - **Navigation: left sidebar**: Chose 200px dark left sidebar (`#1e293b`) over top bar. Desktop-app layout with sidebar scales better as more pages are added in later prompts.
 - **recharts installed but unused in P9**: `recharts` installed as specified; heatmap uses plain CSS grid per spec. Will be used in a later prompt.
 - **App.css imported in main.tsx**: Added `import "./App.css"` to `src/main.tsx` — it was missing from the scaffold, which would have prevented CSS variables and skeleton animation from loading.
