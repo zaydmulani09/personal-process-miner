@@ -88,6 +88,48 @@ def main() -> None:
         resp = _send(proc, {"type": "delete_workflow", "workflow_id": 999999})
         assert resp.get("type") == "error", f"delete nonexistent should error: {resp}"
 
+        # --- Automation management tests ---
+
+        # Fetch existing automations (need at least one — run test_macro_recorder.py first)
+        resp = _send(proc, {"type": "get_automations"})
+        assert resp.get("type") == "automations"
+        automations = resp.get("data", [])
+        assert len(automations) > 0, (
+            "No automations in DB — run py sidecar/test_macro_recorder.py first"
+        )
+        auto_id = automations[0]["id"]
+
+        # run_automation → run_result (script may fail; just check response type)
+        resp = _send(proc, {"type": "run_automation", "automation_id": auto_id})
+        assert resp.get("type") == "run_result", f"run_automation type failed: {resp}"
+        assert "status" in resp, f"run_result missing status: {resp}"
+        assert resp.get("automation_id") == auto_id
+
+        # update_automation_name → ok
+        resp = _send(proc, {
+            "type": "update_automation_name",
+            "automation_id": auto_id,
+            "name": "Renamed Automation",
+        })
+        assert resp.get("type") == "ok", f"update_automation_name failed: {resp}"
+        assert resp.get("automation_id") == auto_id
+
+        # delete_automation with valid id → ok
+        resp = _send(proc, {"type": "delete_automation", "automation_id": auto_id})
+        assert resp.get("type") == "ok", f"delete_automation valid failed: {resp}"
+
+        # delete_automation with nonexistent id → error
+        resp = _send(proc, {"type": "delete_automation", "automation_id": 999999})
+        assert resp.get("type") == "error", f"delete nonexistent automation should error: {resp}"
+
+        # get_automation_stats → automation_stats with all 4 keys
+        resp = _send(proc, {"type": "get_automation_stats"})
+        assert resp.get("type") == "automation_stats", f"get_automation_stats type failed: {resp}"
+        data = resp.get("data", {})
+        for key in ("total_automations", "total_runs", "successful_runs",
+                    "estimated_time_saved_seconds"):
+            assert key in data, f"automation_stats missing key {key!r}: {data}"
+
         # shutdown → clean exit
         resp = _send(proc, {"type": "shutdown"})
         assert resp.get("type") == "ok", f"shutdown ack failed: {resp}"
@@ -99,7 +141,7 @@ def main() -> None:
         print(f"FAILED: {exc}", file=sys.stderr)
         sys.exit(1)
 
-    print("ALL TESTS PASSED")
+    print("ALL IPC TESTS PASSED")
 
 
 if __name__ == "__main__":

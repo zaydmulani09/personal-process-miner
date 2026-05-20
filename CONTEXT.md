@@ -66,11 +66,13 @@ personal-process-miner/
 │   │   ├── ActivityHeatmap.tsx    # 12-week session activity grid (plain CSS grid, hover tooltip)
 │   │   ├── StatsBar.tsx           # 4-metric responsive stats cards
 │   │   ├── CaptureControls.tsx    # start/stop capture toggle + analyze-now sequence
+│   │   ├── AutomationCard.tsx     # card with inline rename, type badge, stats, script preview, run/delete
 │   │   ├── ImproveScriptModal.tsx # LLM improve modal: setup instructions or AI improvement flow
 │   │   ├── MacroRecorder.tsx      # recording modal: start/stop/save/discard + live event count
 │   │   └── ScriptPreviewModal.tsx # playwright script preview: load, edit name, save/close
 │   └── pages/
-│       └── Dashboard.tsx  # full dashboard: summary cards, workflow list, modal management
+│       ├── Automations.tsx  # automation library: stats bar, filter toggles, AutomationCard list
+│       └── Dashboard.tsx    # full dashboard: summary cards, workflow list, modal management
 ├── src-tauri/
 │   ├── src/
 │   │   ├── lib.rs         # sidecar spawn + send_to_sidecar command (request/response IPC)
@@ -110,7 +112,7 @@ personal-process-miner/
 | P10 | Macro recorder (start/stop/save, script generation, UI recording flow) | complete |
 | P11 | Playwright script generator (browser event detection, preview modal, save automation) | complete |
 | P12 | LLM script explainer (Ollama/Claude backends, improve automation, opt-in via env vars) | complete |
-| P13 | | pending |
+| P13 | Automation library UI (run, rename, delete, stats, Automations page + nav) | complete |
 | P14 | | pending |
 | P15 | | pending |
 | P16 | | pending |
@@ -134,6 +136,7 @@ personal-process-miner/
 - `sidecar/test_macro_recorder.py` — macro recorder unit tests (5 cases: start/stop, double-start guard, script generation, empty script, save_macro file+DB)
 - `sidecar/test_playwright_gen.py` — playwright generator unit tests (6 cases: is_browser_event, extract_url_from_title, classify_event, group_keystrokes, no-browser-events script, full script structure)
 - `sidecar/test_llm_explainer.py` — LLM explainer unit tests (5 cases: backend empty, invalid Ollama URL, disabled explain_script, fence stripping, get/update automation by id — all offline, no live LLM required)
+- `sidecar/test_ipc.py` now includes automation management tests: run_automation, update_automation_name, delete_automation (valid + nonexistent), get_automation_stats — 5 new assertions (requires test_macro_recorder.py to have run first to seed an automation)
 - `sidecar/seed.py` — not a test, but verifies seeder runs clean (59 rows)
 
 ## Known Issues
@@ -158,6 +161,10 @@ None.
 - **Rust borrow lifetime fix in shutdown handler**: The `on_window_event` closure had a borrow issue where the `MutexGuard` (from `try_lock`) could outlive the `state` binding. Fixed by wrapping the `try_lock` in a nested block `{}` that drops the guard before `state` goes out of scope.
 - **LLM feature is opt-in via env vars, disabled by default**: `PPM_LLM_BACKEND` defaults to `""` (disabled). Set to `"ollama"` or `"claude"` to enable. No backend = app works exactly as before. Ollama availability check uses a 1s timeout (reduced from 2s to keep the `is_llm_available()` call fast on Windows).
 - **`✨ Improve` button gated on automation existence**: `Dashboard.tsx` fetches all automations and passes the matching one (by `workflow_id`) as an optional prop to `WorkflowCard`. The button only renders when an automation prop is present, avoiding a schema change to the `Workflow` type.
+- **`run_automation` uses temp file on Windows**: `subprocess.run` needs the script written to a real file (not stdin pipe) because pyautogui and playwright scripts use `if __name__ == "__main__"` guards. `tempfile.NamedTemporaryFile(delete=False)` is used because Windows cannot open a NamedTemporaryFile from a second handle while it's still open; the file is deleted in a `finally` block.
+- **`delete_automation` reconstructs script path from name slug**: The `automations` table has no `script_path` column. The file path is reconstructed from the automation name using the same slug logic as `save_macro` / `save_playwright_script`. If the file was renamed or moved, deletion silently succeeds (row deleted, file skip).
+- **`estimated_time_saved_seconds` = total_runs × 120**: A fixed 2-minute-per-run estimate. No actual timing is tracked; this is a motivational heuristic, not a measurement.
+- **Automations page nav uses local `page` state in `App.tsx`**: Simple `useState<"dashboard" | "automations">` swap — no router needed at this scale.
 - **Navigation: left sidebar**: Chose 200px dark left sidebar (`#1e293b`) over top bar. Desktop-app layout with sidebar scales better as more pages are added in later prompts.
 - **recharts installed but unused in P9**: `recharts` installed as specified; heatmap uses plain CSS grid per spec. Will be used in a later prompt.
 - **App.css imported in main.tsx**: Added `import "./App.css"` to `src/main.tsx` — it was missing from the scaffold, which would have prevented CSS variables and skeleton animation from loading.
