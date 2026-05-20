@@ -49,11 +49,17 @@ personal-process-miner/
 │   ├── App.css
 │   ├── main.tsx
 │   ├── vite-env.d.ts
+│   ├── lib/
+│   │   ├── sidecar.ts     # sendToSidecar IPC utility + SidecarError
+│   │   └── types.ts       # Workflow, Session, SummaryStats, Automation types
+│   ├── components/
+│   │   ├── WorkflowCard.tsx      # card with badge, steps pills, stats, name/delete buttons
+│   │   └── LabelWorkflowModal.tsx # modal with editable steps, name input, save/cancel
 │   └── pages/
-│       └── Dashboard.tsx
+│       └── Dashboard.tsx  # full dashboard: summary cards, workflow list, modal management
 ├── src-tauri/
 │   ├── src/
-│   │   ├── lib.rs         # sidecar spawn + shutdown logic
+│   │   ├── lib.rs         # sidecar spawn + send_to_sidecar command (request/response IPC)
 │   │   └── main.rs
 │   ├── capabilities/
 │   │   └── default.json
@@ -85,7 +91,7 @@ personal-process-miner/
 | P5 | Session segmenter (idle gap, midnight boundary, max-length) | complete |
 | P6 | Sequence fingerprinter (sliding window + edit-distance fuzzy dedup) | complete |
 | P7 | Pattern ranker & stats (scoring, time-wasted, summary aggregation) | complete |
-| P8 | | pending |
+| P8 | Manual labeling flow (UI + backend label/delete, Tauri IPC bridge, dashboard) | complete |
 | P9 | | pending |
 | P10 | | pending |
 | P11 | | pending |
@@ -110,6 +116,7 @@ personal-process-miner/
 - `sidecar/test_segmenter.py` — segmenter unit tests (5 cases: idle gap, midnight, dominant app, empty/single, live DB)
 - `sidecar/test_fingerprinter.py` — fingerprinter unit tests (7 cases: extract, windows, stability, edit distance, find_patterns freq, min-freq filter, live DB)
 - `sidecar/test_ranker.py` — ranker unit tests (5 cases: score_workflow, ordering, human formatting, live DB summary, empty list)
+- `sidecar/test_ipc.py` now includes label_workflow and delete_workflow IPC tests (14 total assertions)
 - `sidecar/seed.py` — not a test, but verifies seeder runs clean (59 rows)
 
 ## Known Issues
@@ -125,3 +132,5 @@ None.
 - **Python command**: System `python` alias points to Windows Store stub. Using `py` launcher (Python 3.11.9 via Python Launcher for Windows).
 - **data/ gitignored**: `data/events.db` is a runtime artifact. Directory is created automatically by `db.py` on first use.
 - **update_session allowlist**: `update_session` filters keys against a hardcoded column allowlist to prevent accidental SQL injection from internal callers. Only `started_at`, `ended_at`, `event_count`, `dominant_app` are accepted.
+- **Tauri IPC bridge**: replaced the fire-and-forget stdout reader with `tokio::sync::mpsc` channel forwarding. `send_to_sidecar` holds a `tokio::sync::Mutex` across write+recv to serialize request/response. `try_lock()` used in the sync window-close handler. `tokio = { version = "1", features = ["sync"] }` added as an explicit Cargo dependency.
+- **seed required before IPC tests**: `test_ipc.py` label/delete tests require at least one workflow in `data/events.db`. Run `py sidecar/seed.py` before running the IPC test suite.
