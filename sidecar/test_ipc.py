@@ -184,6 +184,25 @@ def main() -> None:
         resp = _send(proc, {"type": "get_onboarding_state"})
         assert resp.get("complete") is True, f"complete not True after set: {resp}"
 
+        # --- Share insights data pipeline tests ---
+
+        # get_summary_stats → all 6 keys present
+        resp = _send(proc, {"type": "get_summary_stats"})
+        assert resp.get("type") == "summary_stats", f"get_summary_stats type failed: {resp}"
+        sdata = resp.get("data", {})
+        for key in ("total_workflows", "total_time_wasted_seconds", "total_time_wasted_human",
+                    "top_workflow", "weekly_wasted_seconds", "weekly_wasted_human"):
+            assert key in sdata, f"summary_stats missing key {key!r}: {sdata}"
+
+        # get_ranked_workflows → type + list with score + time_wasted_human per item
+        resp = _send(proc, {"type": "get_ranked_workflows"})
+        assert resp.get("type") == "ranked_workflows", f"get_ranked_workflows type failed: {resp}"
+        wf_list = resp.get("data", [])
+        assert isinstance(wf_list, list), f"ranked_workflows data not list: {resp}"
+        for wf in wf_list:
+            assert "score" in wf, f"workflow missing 'score': {wf}"
+            assert "time_wasted_human" in wf, f"workflow missing 'time_wasted_human': {wf}"
+
         # shutdown → clean exit
         resp = _send(proc, {"type": "shutdown"})
         assert resp.get("type") == "ok", f"shutdown ack failed: {resp}"
