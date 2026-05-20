@@ -38,8 +38,17 @@ def _handle(msg: dict) -> dict | None:
 
     if t == "get_events":
         limit = msg.get("limit", 100)
-        events = db.get_recent_events(limit=limit)
-        return {"type": "events", "data": events}
+        return {"type": "events", "data": db.get_recent_events(limit=limit)}
+
+    if t == "get_sessions":
+        limit = msg.get("limit", 50)
+        return {"type": "sessions", "data": db.get_sessions(limit=limit)}
+
+    if t == "get_workflows":
+        return {"type": "workflows", "data": db.get_workflows()}
+
+    if t == "get_automations":
+        return {"type": "automations", "data": db.get_automations()}
 
     if t == "shutdown":
         logging.info("Shutdown received — stopping capture and exiting")

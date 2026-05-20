@@ -52,6 +52,21 @@ def main() -> None:
         resp = _send(proc, {"type": "stop_capture"})
         assert resp == {"type": "ok", "message": "capture stopped"}, f"stop_capture failed: {resp}"
 
+        # get_sessions → sessions list
+        resp = _send(proc, {"type": "get_sessions", "limit": 5})
+        assert resp.get("type") == "sessions", f"get_sessions type failed: {resp}"
+        assert isinstance(resp.get("data"), list), f"get_sessions data not list: {resp}"
+
+        # get_workflows → workflows list
+        resp = _send(proc, {"type": "get_workflows"})
+        assert resp.get("type") == "workflows", f"get_workflows type failed: {resp}"
+        assert isinstance(resp.get("data"), list), f"get_workflows data not list: {resp}"
+
+        # get_automations → automations list
+        resp = _send(proc, {"type": "get_automations"})
+        assert resp.get("type") == "automations", f"get_automations type failed: {resp}"
+        assert isinstance(resp.get("data"), list), f"get_automations data not list: {resp}"
+
         # shutdown → clean exit
         resp = _send(proc, {"type": "shutdown"})
         assert resp.get("type") == "ok", f"shutdown ack failed: {resp}"
