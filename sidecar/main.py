@@ -12,6 +12,7 @@ logging.basicConfig(
 
 import capture
 import db
+import segmenter
 
 
 def _write(msg: dict) -> None:
@@ -49,6 +50,10 @@ def _handle(msg: dict) -> dict | None:
 
     if t == "get_automations":
         return {"type": "automations", "data": db.get_automations()}
+
+    if t == "run_segmentation":
+        sessions = segmenter.run_segmentation()
+        return {"type": "segmentation_complete", "session_count": len(sessions), "sessions": sessions}
 
     if t == "shutdown":
         logging.info("Shutdown received — stopping capture and exiting")
