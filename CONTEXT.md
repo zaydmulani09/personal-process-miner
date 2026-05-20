@@ -30,11 +30,13 @@ personal-process-miner/
 ├── sidecar/
 │   ├── __init__.py
 │   ├── capture.py         # keyboard/mouse/window capture module
-│   ├── db.py              # SQLite schema + insert/query helpers
+│   ├── db.py              # migrations runner + all schema helpers
 │   ├── main.py            # stdin/stdout JSON IPC daemon
 │   ├── requirements.txt
+│   ├── seed.py            # realistic sample data seeder
 │   ├── sidecar.log        # runtime log (gitignored)
 │   ├── test_capture.py    # capture smoke-test
+│   ├── test_db.py         # DB layer test (in-memory)
 │   └── test_ipc.py        # IPC smoke-test
 ├── src/
 │   ├── App.tsx
@@ -73,7 +75,7 @@ personal-process-miner/
 | P1 | Tauri + React scaffold & GitHub repo init | complete |
 | P2 | Python sidecar IPC daemon | complete |
 | P3 | Event capture module (keyboard/mouse/window + SQLite) | complete |
-| P4 | | pending |
+| P4 | SQLite schema & migrations + seed data | complete |
 | P5 | | pending |
 | P6 | | pending |
 | P7 | | pending |
@@ -95,7 +97,11 @@ personal-process-miner/
 
 ## Test Count
 
-2 (sidecar/test_ipc.py — IPC smoke-test with 7 assertions; sidecar/test_capture.py — capture + DB smoke-test)
+4 scripts:
+- `sidecar/test_ipc.py` — IPC smoke-test (10 assertions)
+- `sidecar/test_capture.py` — capture + DB file smoke-test
+- `sidecar/test_db.py` — DB layer test on in-memory SQLite (all tables, all helpers)
+- `sidecar/seed.py` — not a test, but verifies seeder runs clean (59 rows)
 
 ## Known Issues
 
@@ -108,4 +114,5 @@ None.
 - **Build verification**: Used `npm run tauri build -- --no-bundle` (release build) instead of `tauri dev` to confirm compilation. Dev mode requires opening a window interactively.
 - **externalBin omitted**: Tauri's `bundle.externalBin` requires the compiled binary (e.g., `main-x86_64-pc-windows-msvc.exe`) to exist at build time. Since Python is not yet compiled via PyInstaller, `externalBin` is deferred to a later prompt. Rust spawns `py sidecar/main.py` directly via `tauri-plugin-shell` instead of `Command::new_sidecar`.
 - **Python command**: System `python` alias points to Windows Store stub. Using `py` launcher (Python 3.11.9 via Python Launcher for Windows).
-- **data/ gitignored**: `data/events.db` is a runtime artifact, not a build artifact. Directory is created automatically by `db.py` on first use.
+- **data/ gitignored**: `data/events.db` is a runtime artifact. Directory is created automatically by `db.py` on first use.
+- **update_session allowlist**: `update_session` filters keys against a hardcoded column allowlist to prevent accidental SQL injection from internal callers. Only `started_at`, `ended_at`, `event_count`, `dominant_app` are accepted.

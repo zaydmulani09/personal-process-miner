@@ -1,3 +1,5 @@
+import json
+import logging
 import os
 import sqlite3
 import threading
@@ -11,18 +13,121 @@ _DB_PATH = os.path.join(_DATA_DIR, "events.db")
 _lock = threading.Lock()
 _conn: sqlite3.Connection | None = None
 
-_SCHEMA = """
-CREATE TABLE IF NOT EXISTS events (
-    id           INTEGER PRIMARY KEY AUTOINCREMENT,
-    timestamp    TEXT NOT NULL,
-    event_type   TEXT NOT NULL,
-    app_name     TEXT,
-    window_title TEXT,
-    detail       TEXT,
-    x            INTEGER,
-    y            INTEGER
-)
-"""
+# ---------------------------------------------------------------------------
+# Migrations
+# ---------------------------------------------------------------------------
+
+MIGRATIONS: list[tuple[int, str]] = [
+    (
+        1,
+        """
+        CREATE TABLE IF NOT EXISTS events (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp    TEXT NOT NULL,
+            event_type   TEXT NOT NULL,
+            app_name     TEXT,
+            window_title TEXT,
+            detail       TEXT,
+            x            INTEGER,
+            y            INTEGER
+        )
+        """,
+    ),
+    (
+        2,
+        """
+        CREATE TABLE IF NOT EXISTS sessions (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            started_at   TEXT NOT NULL,
+            ended_at     TEXT,
+            event_count  INTEGER DEFAULT 0,
+            dominant_app TEXT
+        )
+        """,
+    ),
+    (
+        3,
+        """
+        CREATE TABLE IF NOT EXISTS workflows (
+            id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+            name                 TEXT NOT NULL,
+            fingerprint          TEXT UNIQUE NOT NULL,
+            steps                TEXT NOT NULL,
+            frequency            INTEGER DEFAULT 0,
+            avg_duration_seconds REAL,
+            first_seen           TEXT,
+            last_seen            TEXT,
+            is_labeled           INTEGER DEFAULT 0,
+            created_at           TEXT NOT NULL
+        )
+        """,
+    ),
+    (
+        4,
+        """
+        CREATE TABLE IF NOT EXISTS automations (
+            id               INTEGER PRIMARY KEY AUTOINCREMENT,
+            workflow_id      INTEGER REFERENCES workflows(id),
+            name             TEXT NOT NULL,
+            script_type      TEXT NOT NULL,
+            script_body      TEXT NOT NULL,
+            last_run_at      TEXT,
+            run_count        INTEGER DEFAULT 0,
+            last_run_status  TEXT,
+            created_at       TEXT NOT NULL
+        )
+        """,
+    ),
+]
+
+
+def run_migrations(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS schema_migrations (
+            version    INTEGER PRIMARY KEY,
+            applied_at TEXT NOT NULL
+        )
+        """
+    )
+    conn.commit()
+
+    applied = {
+        row[0]
+        for row in conn.execute("SELECT version FROM schema_migrations").fetchall()
+    }
+
+    # Migration 1 may already be present without schema_migrations tracking.
+    existing_tables = {
+        row[0]
+        for row in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+        ).fetchall()
+    }
+    if "events" in existing_tables and 1 not in applied:
+        conn.execute(
+            "INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)",
+            (1, datetime.now(timezone.utc).isoformat()),
+        )
+        applied.add(1)
+        conn.commit()
+
+    for version, sql in MIGRATIONS:
+        if version in applied:
+            continue
+        logging.info("Applying migration %d", version)
+        conn.execute(sql)
+        conn.execute(
+            "INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)",
+            (version, datetime.now(timezone.utc).isoformat()),
+        )
+        conn.commit()
+        logging.info("Migration %d applied", version)
+
+
+# ---------------------------------------------------------------------------
+# Connection
+# ---------------------------------------------------------------------------
 
 
 def _get_conn() -> sqlite3.Connection:
@@ -31,9 +136,13 @@ def _get_conn() -> sqlite3.Connection:
         os.makedirs(_DATA_DIR, exist_ok=True)
         _conn = sqlite3.connect(_DB_PATH, check_same_thread=False)
         _conn.row_factory = sqlite3.Row
-        _conn.execute(_SCHEMA)
-        _conn.commit()
+        run_migrations(_conn)
     return _conn
+
+
+# ---------------------------------------------------------------------------
+# Events
+# ---------------------------------------------------------------------------
 
 
 def insert_event(event: dict) -> None:
@@ -64,4 +173,131 @@ def get_recent_events(limit: int = 100) -> list[dict]:
         rows = conn.execute(
             "SELECT * FROM events ORDER BY id DESC LIMIT ?", (limit,)
         ).fetchall()
+    return [dict(row) for row in rows]
+
+
+# ---------------------------------------------------------------------------
+# Sessions
+# ---------------------------------------------------------------------------
+
+
+def insert_session(session: dict) -> int:
+    conn = _get_conn()
+    with _lock:
+        cur = conn.execute(
+            "INSERT INTO sessions (started_at, ended_at, event_count, dominant_app) "
+            "VALUES (:started_at, :ended_at, :event_count, :dominant_app)",
+            {
+                "started_at": session["started_at"],
+                "ended_at": session.get("ended_at"),
+                "event_count": session.get("event_count", 0),
+                "dominant_app": session.get("dominant_app"),
+            },
+        )
+        conn.commit()
+        return cur.lastrowid
+
+
+_SESSION_COLUMNS = {"started_at", "ended_at", "event_count", "dominant_app"}
+
+
+def update_session(session_id: int, updates: dict) -> None:
+    if not updates:
+        return
+    safe = {k: v for k, v in updates.items() if k in _SESSION_COLUMNS}
+    if not safe:
+        return
+    conn = _get_conn()
+    cols = ", ".join(f"{k} = ?" for k in safe)
+    vals = list(safe.values()) + [session_id]
+    with _lock:
+        conn.execute(f"UPDATE sessions SET {cols} WHERE id = ?", vals)
+        conn.commit()
+
+
+def get_sessions(limit: int = 50) -> list[dict]:
+    conn = _get_conn()
+    with _lock:
+        rows = conn.execute(
+            "SELECT * FROM sessions ORDER BY id DESC LIMIT ?", (limit,)
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+# ---------------------------------------------------------------------------
+# Workflows
+# ---------------------------------------------------------------------------
+
+
+def insert_workflow(workflow: dict) -> int:
+    conn = _get_conn()
+    with _lock:
+        cur = conn.execute(
+            "INSERT INTO workflows "
+            "(name, fingerprint, steps, frequency, avg_duration_seconds, "
+            " first_seen, last_seen, is_labeled, created_at) "
+            "VALUES (:name, :fingerprint, :steps, :frequency, :avg_duration_seconds, "
+            "        :first_seen, :last_seen, :is_labeled, :created_at)",
+            {
+                "name": workflow["name"],
+                "fingerprint": workflow["fingerprint"],
+                "steps": json.dumps(workflow.get("steps", [])),
+                "frequency": workflow.get("frequency", 0),
+                "avg_duration_seconds": workflow.get("avg_duration_seconds"),
+                "first_seen": workflow.get("first_seen"),
+                "last_seen": workflow.get("last_seen"),
+                "is_labeled": int(workflow.get("is_labeled", False)),
+                "created_at": workflow.get(
+                    "created_at", datetime.now(timezone.utc).isoformat()
+                ),
+            },
+        )
+        conn.commit()
+        return cur.lastrowid
+
+
+def get_workflows() -> list[dict]:
+    conn = _get_conn()
+    with _lock:
+        rows = conn.execute(
+            "SELECT * FROM workflows ORDER BY frequency DESC"
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+# ---------------------------------------------------------------------------
+# Automations
+# ---------------------------------------------------------------------------
+
+
+def insert_automation(automation: dict) -> int:
+    conn = _get_conn()
+    with _lock:
+        cur = conn.execute(
+            "INSERT INTO automations "
+            "(workflow_id, name, script_type, script_body, last_run_at, "
+            " run_count, last_run_status, created_at) "
+            "VALUES (:workflow_id, :name, :script_type, :script_body, :last_run_at, "
+            "        :run_count, :last_run_status, :created_at)",
+            {
+                "workflow_id": automation.get("workflow_id"),
+                "name": automation["name"],
+                "script_type": automation["script_type"],
+                "script_body": automation["script_body"],
+                "last_run_at": automation.get("last_run_at"),
+                "run_count": automation.get("run_count", 0),
+                "last_run_status": automation.get("last_run_status"),
+                "created_at": automation.get(
+                    "created_at", datetime.now(timezone.utc).isoformat()
+                ),
+            },
+        )
+        conn.commit()
+        return cur.lastrowid
+
+
+def get_automations() -> list[dict]:
+    conn = _get_conn()
+    with _lock:
+        rows = conn.execute("SELECT * FROM automations").fetchall()
     return [dict(row) for row in rows]
