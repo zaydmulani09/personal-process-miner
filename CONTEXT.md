@@ -34,10 +34,12 @@ personal-process-miner/
 │   ├── main.py            # stdin/stdout JSON IPC daemon
 │   ├── requirements.txt
 │   ├── seed.py            # realistic sample data seeder
+│   ├── fingerprinter.py   # sliding-window sequence detector + fuzzy dedup
 │   ├── segmenter.py       # session segmentation engine
 │   ├── sidecar.log        # runtime log (gitignored)
 │   ├── test_capture.py    # capture smoke-test
 │   ├── test_db.py         # DB layer test (in-memory)
+│   ├── test_fingerprinter.py  # fingerprinter unit tests (7 cases)
 │   ├── test_ipc.py        # IPC smoke-test
 │   └── test_segmenter.py  # segmenter unit tests
 ├── src/
@@ -79,7 +81,7 @@ personal-process-miner/
 | P3 | Event capture module (keyboard/mouse/window + SQLite) | complete |
 | P4 | SQLite schema & migrations + seed data | complete |
 | P5 | Session segmenter (idle gap, midnight boundary, max-length) | complete |
-| P6 | | pending |
+| P6 | Sequence fingerprinter (sliding window + edit-distance fuzzy dedup) | complete |
 | P7 | | pending |
 | P8 | | pending |
 | P9 | | pending |
@@ -99,11 +101,12 @@ personal-process-miner/
 
 ## Test Count
 
-5 scripts:
+6 scripts:
 - `sidecar/test_ipc.py` — IPC smoke-test (10 assertions)
 - `sidecar/test_capture.py` — capture + DB file smoke-test
 - `sidecar/test_db.py` — DB layer test on in-memory SQLite (all tables, all helpers)
 - `sidecar/test_segmenter.py` — segmenter unit tests (5 cases: idle gap, midnight, dominant app, empty/single, live DB)
+- `sidecar/test_fingerprinter.py` — fingerprinter unit tests (7 cases: extract, windows, stability, edit distance, find_patterns freq, min-freq filter, live DB)
 - `sidecar/seed.py` — not a test, but verifies seeder runs clean (59 rows)
 
 ## Known Issues

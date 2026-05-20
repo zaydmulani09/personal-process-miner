@@ -176,6 +176,19 @@ def get_recent_events(limit: int = 100) -> list[dict]:
     return [dict(row) for row in rows]
 
 
+def get_events_by_ids(event_ids: list[int]) -> list[dict]:
+    if not event_ids:
+        return []
+    conn = _get_conn()
+    placeholders = ",".join("?" * len(event_ids))
+    with _lock:
+        rows = conn.execute(
+            f"SELECT * FROM events WHERE id IN ({placeholders}) ORDER BY timestamp ASC",
+            event_ids,
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
 # ---------------------------------------------------------------------------
 # Sessions
 # ---------------------------------------------------------------------------
@@ -263,6 +276,39 @@ def get_workflows() -> list[dict]:
             "SELECT * FROM workflows ORDER BY frequency DESC"
         ).fetchall()
     return [dict(row) for row in rows]
+
+
+def upsert_workflow(workflow: dict) -> None:
+    """Insert workflow or update frequency/last_seen/avg_duration on fingerprint conflict."""
+    conn = _get_conn()
+    with _lock:
+        conn.execute(
+            """
+            INSERT INTO workflows
+                (name, fingerprint, steps, frequency, avg_duration_seconds,
+                 first_seen, last_seen, is_labeled, created_at)
+            VALUES
+                (:name, :fingerprint, :steps, :frequency, :avg_duration_seconds,
+                 :first_seen, :last_seen, 0, :created_at)
+            ON CONFLICT(fingerprint) DO UPDATE SET
+                frequency            = excluded.frequency,
+                last_seen            = excluded.last_seen,
+                avg_duration_seconds = excluded.avg_duration_seconds
+            """,
+            {
+                "name": workflow.get("name", "Auto-detected workflow"),
+                "fingerprint": workflow["fingerprint"],
+                "steps": json.dumps(workflow.get("steps", [])),
+                "frequency": workflow.get("frequency", 0),
+                "avg_duration_seconds": workflow.get("avg_duration_seconds"),
+                "first_seen": workflow.get("first_seen"),
+                "last_seen": workflow.get("last_seen"),
+                "created_at": workflow.get(
+                    "created_at", datetime.now(timezone.utc).isoformat()
+                ),
+            },
+        )
+        conn.commit()
 
 
 # ---------------------------------------------------------------------------
