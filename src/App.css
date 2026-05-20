@@ -19,6 +19,19 @@
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   -webkit-text-size-adjust: 100%;
+
+  --color-background-secondary: #f1f5f9;
+  --color-heatmap-empty: #e2e8f0;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+.skeleton {
+  animation: pulse 1.5s ease-in-out infinite;
+  background: #e2e8f0 !important;
 }
 
 .container {
@@ -99,6 +112,8 @@ button {
   :root {
     color: #f6f6f6;
     background-color: #2f2f2f;
+    --color-background-secondary: #1e293b;
+    --color-heatmap-empty: #334155;
   }
 
   a:hover {

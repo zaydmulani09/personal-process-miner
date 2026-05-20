@@ -53,8 +53,11 @@ personal-process-miner/
 │   │   ├── sidecar.ts     # sendToSidecar IPC utility + SidecarError
 │   │   └── types.ts       # Workflow, Session, SummaryStats, Automation types
 │   ├── components/
-│   │   ├── WorkflowCard.tsx      # card with badge, steps pills, stats, name/delete buttons
-│   │   └── LabelWorkflowModal.tsx # modal with editable steps, name input, save/cancel
+│   │   ├── WorkflowCard.tsx       # card with badge, steps pills, stats, name/delete buttons
+│   │   ├── LabelWorkflowModal.tsx # modal with editable steps, name input, save/cancel
+│   │   ├── ActivityHeatmap.tsx    # 12-week session activity grid (plain CSS grid, hover tooltip)
+│   │   ├── StatsBar.tsx           # 4-metric responsive stats cards
+│   │   └── CaptureControls.tsx    # start/stop capture toggle + analyze-now sequence
 │   └── pages/
 │       └── Dashboard.tsx  # full dashboard: summary cards, workflow list, modal management
 ├── src-tauri/
@@ -92,7 +95,7 @@ personal-process-miner/
 | P6 | Sequence fingerprinter (sliding window + edit-distance fuzzy dedup) | complete |
 | P7 | Pattern ranker & stats (scoring, time-wasted, summary aggregation) | complete |
 | P8 | Manual labeling flow (UI + backend label/delete, Tauri IPC bridge, dashboard) | complete |
-| P9 | | pending |
+| P9 | Pattern dashboard UI (heatmap, stats bar, capture controls, nav shell) | complete |
 | P10 | | pending |
 | P11 | | pending |
 | P12 | | pending |
@@ -134,3 +137,7 @@ None.
 - **update_session allowlist**: `update_session` filters keys against a hardcoded column allowlist to prevent accidental SQL injection from internal callers. Only `started_at`, `ended_at`, `event_count`, `dominant_app` are accepted.
 - **Tauri IPC bridge**: replaced the fire-and-forget stdout reader with `tokio::sync::mpsc` channel forwarding. `send_to_sidecar` holds a `tokio::sync::Mutex` across write+recv to serialize request/response. `try_lock()` used in the sync window-close handler. `tokio = { version = "1", features = ["sync"] }` added as an explicit Cargo dependency.
 - **seed required before IPC tests**: `test_ipc.py` label/delete tests require at least one workflow in `data/events.db`. Run `py sidecar/seed.py` before running the IPC test suite.
+- **Navigation: left sidebar**: Chose 200px dark left sidebar (`#1e293b`) over top bar. Desktop-app layout with sidebar scales better as more pages are added in later prompts.
+- **recharts installed but unused in P9**: `recharts` installed as specified; heatmap uses plain CSS grid per spec. Will be used in a later prompt.
+- **App.css imported in main.tsx**: Added `import "./App.css"` to `src/main.tsx` — it was missing from the scaffold, which would have prevented CSS variables and skeleton animation from loading.
+- **`--color-background-secondary` and `--color-heatmap-empty`**: CSS vars defined in `:root` with dark-mode overrides in `@media (prefers-color-scheme: dark)`.

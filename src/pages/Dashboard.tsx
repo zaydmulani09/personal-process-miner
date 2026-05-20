@@ -1,12 +1,34 @@
 import { useCallback, useEffect, useState } from "react";
+import ActivityHeatmap from "../components/ActivityHeatmap";
+import CaptureControls from "../components/CaptureControls";
 import LabelWorkflowModal from "../components/LabelWorkflowModal";
+import StatsBar from "../components/StatsBar";
 import WorkflowCard from "../components/WorkflowCard";
 import { sendToSidecar } from "../lib/sidecar";
-import { SummaryStats, Workflow } from "../lib/types";
+import { Session, SummaryStats, Workflow } from "../lib/types";
+
+const EMPTY_STATS: SummaryStats = {
+  total_workflows: 0,
+  total_time_wasted_seconds: 0,
+  total_time_wasted_human: "0 sec",
+  top_workflow: null,
+  weekly_wasted_seconds: 0,
+  weekly_wasted_human: "0 sec",
+};
+
+function SkeletonCard() {
+  return (
+    <div
+      className="skeleton"
+      style={{ height: 120, borderRadius: 8, marginBottom: 12 }}
+    />
+  );
+}
 
 export default function Dashboard() {
   const [workflows, setWorkflows] = useState<Workflow[]>([]);
-  const [stats, setStats] = useState<SummaryStats | null>(null);
+  const [stats, setStats] = useState<SummaryStats>(EMPTY_STATS);
+  const [sessions, setSessions] = useState<Session[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [activeWorkflow, setActiveWorkflow] = useState<Workflow | null>(null);
@@ -14,12 +36,14 @@ export default function Dashboard() {
   const fetchData = useCallback(async () => {
     setError("");
     try {
-      const [wfResp, statsResp] = await Promise.all([
-        sendToSidecar({ type: "get_ranked_workflows" }) as Promise<{ data: Workflow[] }>,
-        sendToSidecar({ type: "get_summary_stats" }) as Promise<{ data: SummaryStats }>,
+      const [wfResp, statsResp, sessResp] = await Promise.all([
+        sendToSidecar({ type: "get_ranked_workflows" }),
+        sendToSidecar({ type: "get_summary_stats" }),
+        sendToSidecar({ type: "get_sessions", limit: 500 }),
       ]);
       setWorkflows((wfResp as { data: Workflow[] }).data ?? []);
-      setStats((statsResp as { data: SummaryStats }).data ?? null);
+      setStats((statsResp as { data: SummaryStats }).data ?? EMPTY_STATS);
+      setSessions((sessResp as { data: Session[] }).data ?? []);
     } catch (e) {
       setError(String(e));
     } finally {
@@ -45,48 +69,117 @@ export default function Dashboard() {
     await fetchData();
   };
 
-  if (loading) {
-    return (
-      <div style={{ padding: 32, color: "#64748b", fontSize: 15 }}>Loading…</div>
-    );
-  }
-
   return (
-    <div style={{ padding: 32, maxWidth: 720, margin: "0 auto", fontFamily: "system-ui, sans-serif" }}>
-      <h1 style={{ fontSize: 22, fontWeight: 700, margin: "0 0 24px", color: "#0f172a" }}>
-        Process Miner
-      </h1>
+    <div
+      style={{
+        padding: 32,
+        maxWidth: 800,
+        margin: "0 auto",
+        fontFamily: "system-ui, sans-serif",
+      }}
+    >
+      <div style={{ marginBottom: 24 }}>
+        <h1
+          style={{
+            fontSize: 22,
+            fontWeight: 700,
+            margin: "0 0 4px",
+            color: "#0f172a",
+            textAlign: "left",
+          }}
+        >
+          Your Workflows
+        </h1>
+        <p style={{ margin: 0, fontSize: 14, color: "#64748b" }}>
+          Patterns detected from your computer activity
+        </p>
+      </div>
+
+      <CaptureControls onAnalysisComplete={fetchData} />
 
       {error && (
-        <div style={{
-          padding: "10px 14px",
-          borderRadius: 6,
-          background: "#fef2f2",
-          color: "#dc2626",
-          fontSize: 13,
-          marginBottom: 20,
-        }}>
-          {error}
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 12,
+            padding: "10px 14px",
+            borderRadius: 6,
+            background: "#fef2f2",
+            color: "#dc2626",
+            fontSize: 13,
+            marginBottom: 20,
+          }}
+        >
+          <span>{error}</span>
+          <button
+            onClick={fetchData}
+            style={{
+              marginLeft: "auto",
+              padding: "4px 10px",
+              fontSize: 12,
+              borderRadius: 4,
+              border: "1px solid #fca5a5",
+              background: "#fff",
+              color: "#dc2626",
+              cursor: "pointer",
+              boxShadow: "none",
+            }}
+          >
+            Retry
+          </button>
         </div>
       )}
 
-      {stats && (
-        <div style={{ display: "flex", gap: 12, marginBottom: 28 }}>
-          <StatCard label="Workflows detected" value={String(stats.total_workflows)} />
-          <StatCard label="Total time wasted" value={stats.total_time_wasted_human} />
-          <StatCard
-            label="Top workflow"
-            value={stats.top_workflow?.name ?? "—"}
-          />
-        </div>
-      )}
+      <StatsBar stats={stats} />
 
-      {workflows.length === 0 ? (
+      <ActivityHeatmap sessions={sessions} />
+
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 10,
+          marginBottom: 16,
+        }}
+      >
+        <h2
+          style={{
+            fontSize: 16,
+            fontWeight: 600,
+            margin: 0,
+            color: "#0f172a",
+            textAlign: "left",
+          }}
+        >
+          Detected Patterns
+        </h2>
+        <span
+          style={{
+            fontSize: 12,
+            fontWeight: 600,
+            padding: "2px 8px",
+            borderRadius: 12,
+            background: "#f1f5f9",
+            color: "#64748b",
+          }}
+        >
+          {workflows.length}
+        </span>
+      </div>
+
+      {loading ? (
+        <>
+          <SkeletonCard />
+          <SkeletonCard />
+          <SkeletonCard />
+        </>
+      ) : workflows.length === 0 ? (
         <p style={{ color: "#94a3b8", fontSize: 14 }}>
           No patterns detected yet. Start capture to begin.
         </p>
       ) : (
-        workflows.map(wf => (
+        workflows.map((wf) => (
           <WorkflowCard
             key={wf.id}
             workflow={wf}
@@ -103,21 +196,6 @@ export default function Dashboard() {
           onClose={() => setActiveWorkflow(null)}
         />
       )}
-    </div>
-  );
-}
-
-function StatCard({ label, value }: { label: string; value: string }) {
-  return (
-    <div style={{
-      flex: 1,
-      border: "1px solid #e2e8f0",
-      borderRadius: 8,
-      padding: "14px 16px",
-      background: "#f8fafc",
-    }}>
-      <div style={{ fontSize: 12, color: "#64748b", marginBottom: 4 }}>{label}</div>
-      <div style={{ fontSize: 18, fontWeight: 700, color: "#0f172a" }}>{value}</div>
     </div>
   );
 }
