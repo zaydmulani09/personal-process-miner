@@ -36,11 +36,11 @@ jobs:
 
       - name: Install sidecar dependencies
         run: |
-          pip install -r sidecar/requirements.txt
-          pip install pyinstaller
+          python -m pip install -r sidecar/requirements.txt
+          python -m pip install pyinstaller
 
       - name: Build Python sidecar
-        run: py -m PyInstaller --onefile --name ppm-sidecar --distpath src-tauri/binaries --paths sidecar sidecar/main.py
+        run: python -m PyInstaller --onefile --name ppm-sidecar --distpath src-tauri/binaries --paths sidecar sidecar/main.py
 
       - name: Rename sidecar binary for Tauri
         run: mv src-tauri/binaries/ppm-sidecar.exe src-tauri/binaries/ppm-sidecar-x86_64-pc-windows-msvc.exe
