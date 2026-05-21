@@ -144,6 +144,7 @@ personal-process-miner/
 | P20 | Smart vision-guided replay engine with element finding, step verification, ReplayControls UI | complete |
 | P21 | Natural language automation builder with AI planning, plan review, refine flow | complete |
 | P22 | Chrome extension for DOM event capture, local HTTP server (port 7834), selector-based Playwright gen, DOMCapture UI | complete |
+| P23 | Remove DOMCapture UI from Automations page; chrome extension backend intact | complete |
 
 ## Test Count
 
@@ -214,7 +215,7 @@ Local-only: test_ipc (requires seed), test_capture, test_macro_recorder, test_pl
 - **`generate_from_dom_events` in playwright_gen.py**: builds async playwright script from dom_events. click→`locator.click()`, input→`locator.fill()`, keydown Enter/Tab→`keyboard.press()`, submit→`locator.click()`. First URL becomes `await page.goto(...)`.
 - **`get_extension_zip` IPC handler**: walks `chrome-extension/` dir, builds in-memory zip, returns base64. DOMCapture.tsx decodes + triggers browser download of `ppm-chrome-extension.zip`.
 - **`DOMCapture.tsx` collapsible panel**: server health check via `fetch` to `localhost:7834/status` (2s timeout). Download Extension, session ID input, Generate Script button, script output pre-block.
-- **`DOMCapture` added to top of Automations page**: imported and rendered before the header/stats section.
+- **`DOMCapture` removed from Automations page (P23)**: `DOMCapture.tsx` deleted. Import and `<DOMCapture />` removed from `Automations.tsx`. Chrome extension backend (`chrome-extension/`, `sidecar/main.py` HTTP server, `sidecar/db.py` dom_events table, `sidecar/playwright_gen.py` generate_from_dom_events) all intact.
 - **InsightsCard uses hardcoded colors, not CSS vars**: card must look identical regardless of OS dark/light mode since it's designed for screenshotting. Width fixed at 600px.
 - **No html2canvas**: Tauri WebView doesn't expose clipboard image write without a custom Rust command. "📋 Copy as Image" button shows the OS screenshot tip instead (Win+Shift+S / Cmd+Shift+4). Deferred to P18+ if a proper clipboard image API is needed.
 - **GitHub URL hardcoded**: `github.com/zaydmulani09/personal-process-miner` read from `git remote get-url origin`.
