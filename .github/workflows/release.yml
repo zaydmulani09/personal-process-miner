@@ -83,8 +83,16 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install Python dependencies
-        run: pip install -r sidecar/requirements.txt
+      - name: Install sidecar dependencies
+        run: |
+          python -m pip install -r sidecar/requirements.txt
+          python -m pip install pyinstaller
+
+      - name: Build Python sidecar
+        run: python -m PyInstaller --onefile --name ppm-sidecar --distpath src-tauri/binaries --paths sidecar sidecar/main.py
+
+      - name: Rename sidecar binary for Tauri (macOS)
+        run: mv src-tauri/binaries/ppm-sidecar src-tauri/binaries/ppm-sidecar-aarch64-apple-darwin
 
       - name: Install Node dependencies
         run: npm install
