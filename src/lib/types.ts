@@ -33,12 +33,13 @@ export interface SummaryStats {
 }
 
 export interface Step {
-  type: 'click' | 'type' | 'scroll' | 'keypress';
+  type: 'click' | 'type' | 'scroll' | 'keypress' | 'wait';
   x?: number;
   y?: number;
   description?: string;
   value?: string;
   key?: string;
+  wait_ms?: number;
   timestamp?: number;
 }
 
