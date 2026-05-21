@@ -7,6 +7,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 import zipfile
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
@@ -35,6 +36,25 @@ _UNSAFE_PATTERNS = ["os.system", "subprocess", "shutil.rmtree", "__import__"]
 
 _HTTP_PORT = 7834
 _CHROME_EXT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "chrome-extension")
+_HTTP_MAX_BODY = 1_048_576  # 1 MB
+_RATE_LIMIT_MAX = 60        # requests
+_RATE_LIMIT_WINDOW = 60.0   # seconds
+_rate_store: dict[str, list[float]] = {}
+_rate_lock = threading.Lock()
+
+
+def _check_rate_limit(ip: str) -> bool:
+    """Return True if request is allowed, False if rate-limited."""
+    now = time.monotonic()
+    with _rate_lock:
+        ts = _rate_store.get(ip, [])
+        ts = [t for t in ts if now - t < _RATE_LIMIT_WINDOW]
+        if len(ts) >= _RATE_LIMIT_MAX:
+            _rate_store[ip] = ts
+            return False
+        ts.append(now)
+        _rate_store[ip] = ts
+        return True
 
 
 class _HTTPHandler(BaseHTTPRequestHandler):
@@ -46,13 +66,13 @@ class _HTTPHandler(BaseHTTPRequestHandler):
         self.send_response(code)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
-        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Origin", "http://localhost")
         self.end_headers()
         self.wfile.write(body)
 
     def do_OPTIONS(self):
         self.send_response(204)
-        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Origin", "http://localhost")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
         self.end_headers()
@@ -65,8 +85,15 @@ class _HTTPHandler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         if self.path == "/dom-events":
+            ip = self.client_address[0]
+            if not _check_rate_limit(ip):
+                self._send_json(429, {"error": "rate_limited"})
+                return
             try:
                 length = int(self.headers.get("Content-Length", 0))
+                if length > _HTTP_MAX_BODY:
+                    self._send_json(413, {"error": "request too large"})
+                    return
                 body = self.rfile.read(length)
                 payload = json.loads(body)
                 events = payload.get("events", [])
@@ -96,6 +123,23 @@ def is_script_safe(script_body: str) -> bool:
     return True
 
 
+def _validate(value, type_, required=True, max_len=None):
+    """Validate a field. Returns (cleaned_value, error_str_or_None)."""
+    if value is None:
+        if required:
+            return None, "required field missing"
+        return value, None
+    if not isinstance(value, type_) or (type_ is int and isinstance(value, bool)):
+        return None, f"must be {type_.__name__}"
+    if isinstance(value, str):
+        value = value.strip()
+        if required and not value:
+            return None, "must not be empty"
+    if isinstance(value, list) and max_len and len(value) > max_len:
+        value = value[:max_len]
+    return value, None
+
+
 def _write(msg: dict) -> None:
     sys.stdout.write(json.dumps(msg) + "\n")
     sys.stdout.flush()
@@ -119,11 +163,19 @@ def _handle(msg: dict) -> dict | None:
         return {"type": "ok", "message": "capture stopped"}
 
     if t == "get_events":
-        limit = msg.get("limit", 100)
+        limit, err = _validate(msg.get("limit", 100), int)
+        if err:
+            limit = 100
+        elif limit < 1:
+            limit = 1
         return {"type": "events", "data": db.get_recent_events(limit=limit)}
 
     if t == "get_sessions":
-        limit = msg.get("limit", 50)
+        limit, err = _validate(msg.get("limit", 50), int)
+        if err:
+            limit = 50
+        elif limit < 1:
+            limit = 1
         return {"type": "sessions", "data": db.get_sessions(limit=limit)}
 
     if t == "get_workflows":
@@ -490,9 +542,13 @@ def _handle(msg: dict) -> dict | None:
         return {"type": "nl_plan", "steps": result["steps"], "summary": result.get("summary", "")}
 
     if t == "refine_nl_plan":
-        instruction = msg.get("instruction", "")
-        steps = msg.get("steps", [])
-        feedback = msg.get("feedback", "")
+        instruction, _ = _validate(msg.get("instruction", ""), str, required=False)
+        instruction = instruction or ""
+        steps, err = _validate(msg.get("steps", []), list, max_len=500)
+        if err:
+            return {"type": "error", "message": f"steps: {err}"}
+        feedback, _ = _validate(msg.get("feedback", ""), str, required=False)
+        feedback = feedback or ""
         if not isinstance(steps, list):
             return {"type": "error", "message": "steps must be a list"}
         result = nl_planner.refine_plan(instruction, steps, feedback)
@@ -501,16 +557,22 @@ def _handle(msg: dict) -> dict | None:
         return {"type": "nl_plan", "steps": result["steps"], "summary": result.get("summary", "")}
 
     if t == "save_nl_automation":
-        instruction = msg.get("instruction", "")
-        steps = msg.get("steps", [])
-        summary = msg.get("summary", "")
+        instruction, _ = _validate(msg.get("instruction", ""), str, required=False)
+        instruction = instruction or ""
+        steps, err = _validate(msg.get("steps", []), list, max_len=500)
+        if err:
+            return {"type": "error", "message": f"steps: {err}"}
+        summary, _ = _validate(msg.get("summary", ""), str, required=False)
+        summary = summary or ""
         if not isinstance(steps, list):
             return {"type": "error", "message": "steps must be a list"}
         automation_id = nl_planner.save_nl_automation(instruction, steps, summary)
         return {"type": "ok", "id": automation_id}
 
     if t == "replay_session":
-        steps = msg.get("steps", [])
+        steps, err = _validate(msg.get("steps", []), list, max_len=500)
+        if err:
+            return {"type": "error", "message": f"steps: {err}"}
         use_vision = msg.get("use_vision", True)
         verify_each = msg.get("verify_each", False)
         if not isinstance(steps, list):
@@ -519,7 +581,9 @@ def _handle(msg: dict) -> dict | None:
         return {"type": "replay_result", "result": result}
 
     if t == "describe_replay_plan":
-        steps = msg.get("steps", [])
+        steps, err = _validate(msg.get("steps", []), list, max_len=500)
+        if err:
+            return {"type": "error", "message": f"steps: {err}"}
         if not isinstance(steps, list):
             return {"type": "error", "message": "steps must be a list"}
         plan = vision_replay.describe_replay_plan(steps)
@@ -555,16 +619,24 @@ def _handle(msg: dict) -> dict | None:
         }
 
     if t == "set_vision_config":
-        backend = msg.get("backend", "")
-        api_key = msg.get("api_key", "")
-        db.set_setting("vision_backend", backend)
+        backend, err = _validate(msg.get("backend", ""), str, required=False)
+        if err:
+            backend = ""
+        api_key, err = _validate(msg.get("api_key", ""), str, required=False)
+        if err:
+            api_key = ""
+        db.set_setting("vision_backend", backend or "")
         if backend:
-            db.set_setting(f"vision_api_key_{backend}", api_key)
+            db.set_setting(f"vision_api_key_{backend}", api_key or "")
         return {"type": "ok"}
 
     if t == "test_vision_connection":
-        backend = msg.get("backend", "")
-        api_key = msg.get("api_key", "")
+        backend, err = _validate(msg.get("backend", ""), str)
+        if err:
+            return {"type": "error", "message": f"backend: {err}"}
+        api_key, err = _validate(msg.get("api_key", ""), str, required=False)
+        if err:
+            api_key = ""
         result = vision_ai.test_connection(backend, api_key)
         return {
             "type": "connection_test",
@@ -578,7 +650,9 @@ def _handle(msg: dict) -> dict | None:
         return {"type": "screenshot", "data": data}
 
     if t == "analyze_screen":
-        instruction = msg.get("instruction", "")
+        instruction, err = _validate(msg.get("instruction", ""), str)
+        if err:
+            return {"type": "error", "message": f"instruction: {err}"}
         screenshot = vision_capture.take_screenshot()
         if not screenshot:
             return {"type": "error", "message": "screenshot failed"}
@@ -586,7 +660,9 @@ def _handle(msg: dict) -> dict | None:
         return {"type": "analysis", "result": result}
 
     if t == "find_element":
-        description = msg.get("description", "")
+        description, err = _validate(msg.get("description", ""), str)
+        if err:
+            return {"type": "error", "message": f"description: {err}"}
         screenshot = vision_capture.take_screenshot()
         if not screenshot:
             return {"type": "error", "message": "screenshot failed"}
@@ -601,7 +677,9 @@ def _handle(msg: dict) -> dict | None:
         return {"type": "screen_description", "result": result}
 
     if t == "verify_action":
-        expected_state = msg.get("expected_state", "")
+        expected_state, err = _validate(msg.get("expected_state", ""), str)
+        if err:
+            return {"type": "error", "message": f"expected_state: {err}"}
         screenshot = vision_capture.take_screenshot()
         if not screenshot:
             return {"type": "error", "message": "screenshot failed"}
@@ -609,7 +687,8 @@ def _handle(msg: dict) -> dict | None:
         return {"type": "verification", "result": result}
 
     if t == "generate_dom_playwright":
-        session_id = msg.get("session_id", "")
+        session_id, _ = _validate(msg.get("session_id", ""), str, required=False)
+        session_id = session_id or ""
         script = playwright_gen.generate_from_dom_events(session_id)
         return {"type": "dom_playwright_script", "script": script}
 
