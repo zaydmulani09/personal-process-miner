@@ -3,8 +3,6 @@ use tauri_plugin_shell::ShellExt;
 use tauri_plugin_shell::process::{CommandChild, CommandEvent};
 use tokio::sync::{mpsc, Mutex};
 
-const SIDECAR_SCRIPT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../sidecar/main.py");
-
 struct SidecarInner {
     child: CommandChild,
     stdout_rx: mpsc::UnboundedReceiver<String>,
@@ -35,10 +33,10 @@ pub fn run() {
         .setup(|app| {
             let (mut shell_rx, child) = app
                 .shell()
-                .command("py")
-                .args([SIDECAR_SCRIPT])
+                .sidecar("ppm-sidecar")
+                .expect("ppm-sidecar not found in externalBin")
                 .spawn()
-                .expect("failed to spawn python sidecar");
+                .expect("failed to spawn ppm-sidecar");
 
             let (tx, stdout_rx) = mpsc::unbounded_channel::<String>();
 
