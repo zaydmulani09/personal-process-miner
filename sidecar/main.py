@@ -23,6 +23,7 @@ import scheduler
 import segmenter
 import vision_capture
 import vision_ai
+import vision_replay
 
 _UNSAFE_PATTERNS = ["os.system", "subprocess", "shutil.rmtree", "__import__"]
 
@@ -418,6 +419,40 @@ def _handle(msg: dict) -> dict | None:
     if t == "list_scheduled":
         data = scheduler.list_scheduled()
         return {"type": "scheduled_list", "data": data}
+
+    if t == "replay_session":
+        steps = msg.get("steps", [])
+        use_vision = msg.get("use_vision", True)
+        verify_each = msg.get("verify_each", False)
+        if not isinstance(steps, list):
+            return {"type": "error", "message": "steps must be a list"}
+        result = vision_replay.replay_session(steps, use_vision=use_vision, verify_each=verify_each)
+        return {"type": "replay_result", "result": result}
+
+    if t == "describe_replay_plan":
+        steps = msg.get("steps", [])
+        if not isinstance(steps, list):
+            return {"type": "error", "message": "steps must be a list"}
+        plan = vision_replay.describe_replay_plan(steps)
+        return {"type": "replay_plan", "plan": plan["plan"]}
+
+    if t == "replay_step":
+        step = msg.get("step", {})
+        use_vision = msg.get("use_vision", True)
+        if not isinstance(step, dict):
+            return {"type": "error", "message": "step must be a dict"}
+        result = vision_replay.replay_step(step, use_vision=use_vision)
+        return {"type": "step_result", "result": result}
+
+    if t == "get_automation_steps":
+        automation_id = msg.get("automation_id")
+        if not isinstance(automation_id, int):
+            return {"type": "error", "message": "automation_id must be an integer"}
+        automation = db.get_automation_by_id(automation_id)
+        if automation is None:
+            return {"type": "error", "message": "automation not found"}
+        steps = vision_replay.parse_steps_from_pyautogui(automation.get("script_body", ""))
+        return {"type": "automation_steps", "steps": steps}
 
     if t == "check_vision":
         available = vision_ai.is_vision_available()

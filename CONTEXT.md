@@ -60,6 +60,8 @@ personal-process-miner/
 │   ├── test_vision.py     # vision module unit tests (5 cases)
 │   ├── vision_capture.py  # mss screenshot capture, base64 encode, screen size
 │   ├── vision_ai.py       # AI vision: Claude/OpenAI/Groq backends, analyze/find/describe/verify
+│   ├── vision_replay.py   # vision-guided replay engine: replay_step, replay_session, describe_replay_plan
+│   ├── test_vision_replay.py  # vision replay unit tests (5 cases)
 │   └── ranker.py          # workflow scoring, time-wasted stats, summary aggregation
 ├── src/
 │   ├── App.tsx
@@ -70,6 +72,7 @@ personal-process-miner/
 │   │   ├── sidecar.ts     # sendToSidecar IPC utility + SidecarError
 │   │   └── types.ts       # Workflow, Session, SummaryStats, Automation types
 │   ├── components/
+│   │   ├── ReplayControls.tsx     # modal: vision/verify toggles, per-step status, result banner
 │   │   ├── ScreenInspector.tsx    # floating AI screen inspector panel (bottom-right)
 │   │   ├── WorkflowCard.tsx       # card with badge, steps pills, stats, name/delete/record/script/improve buttons
 │   │   ├── LabelWorkflowModal.tsx # modal with editable steps, name input, save/cancel
@@ -133,13 +136,13 @@ personal-process-miner/
 | P17 | Shareable insights card with weekly stats and top workflows | complete |
 | P18 | GitHub Actions CI + README + Release (v0.1.0) | complete |
 | P19 | AI Vision backend with Claude/OpenAI/Groq, screen inspector UI, find element | complete |
-| P20 | | pending |
+| P20 | Smart vision-guided replay engine with element finding, step verification, ReplayControls UI | complete |
 | P21 | | pending |
 | P22 | | pending |
 
 ## Test Count
 
-11 scripts total — 5 run on CI (headless-safe), 6 local-only (require OS GUI / running sidecar):
+12 scripts total — 5 run on CI (headless-safe), 7 local-only (require OS GUI / running sidecar):
 - `sidecar/test_ipc.py` — IPC smoke-test (34 assertions: prev 27 + get_summary_stats 6 keys, get_ranked_workflows type+list, per-workflow score+time_wasted_human)
 - `sidecar/test_capture.py` — capture + DB file smoke-test
 - `sidecar/test_db.py` — DB layer test on in-memory SQLite (all tables, all helpers; +5 privacy: migration 5, get/set_setting, get_all_settings, purge_all_data, purge_old_events zero-retention)
@@ -153,7 +156,7 @@ personal-process-miner/
 - `sidecar/seed.py` — not a test, but verifies seeder runs clean (59 rows)
 
 CI runs: test_db, test_segmenter, test_fingerprinter, test_ranker, test_llm_explainer
-Local-only: test_ipc (requires seed), test_capture, test_macro_recorder, test_playwright_gen, test_scheduler, test_vision (requires display)
+Local-only: test_ipc (requires seed), test_capture, test_macro_recorder, test_playwright_gen, test_scheduler, test_vision (requires display), test_vision_replay (requires display + pyautogui)
 
 ## Known Issues
 
@@ -192,6 +195,10 @@ Local-only: test_ipc (requires seed), test_capture, test_macro_recorder, test_pl
 - **master branch is the release branch**: all 18 prompts merged from `claude/awesome-pasteur-afa26c` to master via fast-forward push. v0.1.0 tagged on master.
 - **AI Vision backends (P19)**: `vision_backend` and `vision_api_key` stored in `privacy_settings` DB. Supported: `claude` (claude-sonnet-4-20250514), `openai` (gpt-4o), `groq` (llama-3.2-90b-vision-preview). All backends strip markdown fences before JSON parse. Vision is disabled by default.
 - **ScreenInspector always mounted**: `<ScreenInspector />` rendered inside the main app shell in `App.tsx`, floating bottom-right. Not rendered during onboarding.
+- **Vision replay falls back gracefully**: `replay_step` uses recorded x/y if vision is unconfigured or confidence < 0.6. `verify_each` is a no-op when no screenshot available. App stays fully functional without an API key.
+- **ReplayControls replaces direct run_automation in Automations page**: Clicking ▶ Run opens ReplayControls modal. Vision-off path calls `run_automation` directly (existing behavior). Vision-on path calls `replay_step` per step for real-time per-step status.
+- **`parse_steps_from_pyautogui` in vision_replay.py**: Parses pyautogui script lines into structured Step dicts for replay. Handles click/keypress/typewrite/scroll patterns.
+- **`get_automation_steps` IPC handler**: Returns parsed steps for an automation_id. Used by ReplayControls on mount when no steps are passed.
 - **InsightsCard uses hardcoded colors, not CSS vars**: card must look identical regardless of OS dark/light mode since it's designed for screenshotting. Width fixed at 600px.
 - **No html2canvas**: Tauri WebView doesn't expose clipboard image write without a custom Rust command. "📋 Copy as Image" button shows the OS screenshot tip instead (Win+Shift+S / Cmd+Shift+4). Deferred to P18+ if a proper clipboard image API is needed.
 - **GitHub URL hardcoded**: `github.com/zaydmulani09/personal-process-miner` read from `git remote get-url origin`.
