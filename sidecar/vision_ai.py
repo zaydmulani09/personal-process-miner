@@ -1,4 +1,5 @@
 import base64
+import io
 import json
 import logging
 import re
@@ -29,6 +30,18 @@ _TEST_IMAGE_B64 = (
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk"
     "+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
 )
+
+
+def _compress_for_groq(b64_png: str) -> str:
+    from PIL import Image
+    img = Image.open(io.BytesIO(base64.b64decode(b64_png))).convert("RGB")
+    w, h = img.size
+    if w > 1280 or h > 1280:
+        ratio = min(1280 / w, 1280 / h)
+        img = img.resize((int(w * ratio), int(h * ratio)), Image.LANCZOS)
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", quality=70)
+    return base64.b64encode(buf.getvalue()).decode()
 
 
 def _strip_fences(text: str) -> str:
@@ -151,12 +164,13 @@ def _call_backend(backend: str, key: str, model: str, screenshot_b64: str, instr
     elif backend == "groq":
         from groq import Groq
         client = Groq(api_key=key)
+        compressed = _compress_for_groq(screenshot_b64)
         response = client.chat.completions.create(
             model=model,
             messages=[{
                 "role": "user",
                 "content": [
-                    {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{screenshot_b64}"}},
+                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{compressed}"}},
                     {"type": "text", "text": instruction},
                 ],
             }],
