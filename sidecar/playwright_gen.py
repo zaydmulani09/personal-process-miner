@@ -1,5 +1,6 @@
 import logging
 import os
+from datetime import datetime, timezone
 
 import db
 
@@ -8,6 +9,20 @@ _PROJECT_ROOT = os.path.dirname(_SIDECAR_DIR)
 _MACROS_DIR = os.path.join(_PROJECT_ROOT, "data", "macros")
 
 _BROWSER_NAMES = {"chrome", "firefox", "edge", "safari", "browser"}
+
+
+def _ts_to_float(evt: dict) -> float:
+    """Convert an event's ISO timestamp string to a Unix epoch float for delta math."""
+    ts = evt.get("timestamp") or ""
+    if not ts:
+        return 0.0
+    try:
+        dt = datetime.fromisoformat(ts)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.timestamp()
+    except (ValueError, AttributeError):
+        return 0.0
 _BROWSER_SUFFIXES = [
     " - Google Chrome",
     " - Mozilla Firefox",
@@ -88,13 +103,13 @@ def group_keystrokes(events: list[dict]) -> list[dict]:
 
         # Accumulate consecutive type events within 2 seconds
         chars = [_extract_char(evt)]
-        base_ts = float(evt.get("timestamp") or 0.0)
+        base_ts = _ts_to_float(evt)
         last_ts = base_ts
         j = i + 1
 
         while j < len(events):
             next_evt = events[j]
-            next_ts = float(next_evt.get("timestamp") or 0.0)
+            next_ts = _ts_to_float(next_evt)
             if classify_event(next_evt) == "type" and (next_ts - last_ts) <= 2.0:
                 chars.append(_extract_char(next_evt))
                 last_ts = next_ts
@@ -137,10 +152,10 @@ def generate_playwright_script(events: list[dict], name: str) -> str:
 
     step_num = 0
     step_lines: list[str] = []
-    prev_ts = float(grouped[0].get("timestamp") or 0.0)
+    prev_ts = _ts_to_float(grouped[0])
 
     for i, evt in enumerate(grouped):
-        ts = float(evt.get("timestamp") or 0.0)
+        ts = _ts_to_float(evt)
         delta = min(ts - prev_ts, 3.0) if i > 0 else 0.0
         prev_ts = ts
 
