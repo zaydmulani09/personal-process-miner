@@ -7,3 +7,4 @@ openai
 Pillow
 mss
 groq
+google-generativeai

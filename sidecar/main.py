@@ -551,14 +551,27 @@ def _handle(msg: dict) -> dict | None:
             "available": available,
             "backend": backend if available else None,
             "model": model if available else None,
+            "backends": vision_ai.get_available_backends(),
         }
 
     if t == "set_vision_config":
         backend = msg.get("backend", "")
         api_key = msg.get("api_key", "")
         db.set_setting("vision_backend", backend)
-        db.set_setting("vision_api_key", api_key)
+        if backend:
+            db.set_setting(f"vision_api_key_{backend}", api_key)
         return {"type": "ok"}
+
+    if t == "test_vision_connection":
+        backend = msg.get("backend", "")
+        api_key = msg.get("api_key", "")
+        result = vision_ai.test_connection(backend, api_key)
+        return {
+            "type": "connection_test",
+            "ok": result.get("ok", False),
+            "error": result.get("error"),
+            "model": result.get("model"),
+        }
 
     if t == "take_screenshot":
         data = vision_capture.take_screenshot()

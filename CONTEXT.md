@@ -40,7 +40,7 @@ personal-process-miner/
 │   ├── db.py              # migrations runner + all schema helpers
 │   ├── main.py            # stdin/stdout JSON IPC daemon
 │   ├── macro_recorder.py  # pynput macro recorder + pyautogui script generator
-│   ├── requirements.txt   # pynput, pygetwindow, pyautogui, playwright, anthropic, openai, Pillow, mss, groq
+│   ├── requirements.txt   # pynput, pygetwindow, pyautogui, playwright, anthropic, openai, Pillow, mss, groq, google-generativeai
 │   ├── scheduler.py       # OS-level scheduling (Windows schtasks / Unix crontab)
 │   ├── seed.py            # realistic sample data seeder
 │   ├── fingerprinter.py   # sliding-window sequence detector + fuzzy dedup
@@ -145,13 +145,14 @@ personal-process-miner/
 | P21 | Natural language automation builder with AI planning, plan review, refine flow | complete |
 | P22 | Chrome extension for DOM event capture, local HTTP server (port 7834), selector-based Playwright gen, DOMCapture UI | complete |
 | P23 | Remove DOMCapture UI from Automations page; chrome extension backend intact | complete |
+| P24 | Universal AI provider support — claude, openai, groq, gemini, grok; test connection UI; per-provider key storage | complete |
 
 ## Test Count
 
-14 scripts total — 5 run on CI (headless-safe), 9 local-only (require OS GUI / running sidecar):
+15 scripts total — 6 run on CI (headless-safe), 9 local-only (require OS GUI / running sidecar):
 - `sidecar/test_ipc.py` — IPC smoke-test (34 assertions: prev 27 + get_summary_stats 6 keys, get_ranked_workflows type+list, per-workflow score+time_wasted_human)
 - `sidecar/test_capture.py` — capture + DB file smoke-test
-- `sidecar/test_db.py` — DB layer test on in-memory SQLite (all tables, all helpers; +5 privacy: migration 5, get/set_setting, get_all_settings, purge_all_data, purge_old_events zero-retention)
+- `sidecar/test_db.py` — DB layer test on in-memory SQLite (all tables incl dom_events, all helpers; +5 privacy: migration 6, get/set_setting, get_all_settings, purge_all_data, purge_old_events zero-retention)
 - `sidecar/test_segmenter.py` — segmenter unit tests (5 cases: idle gap, midnight, dominant app, empty/single, live DB)
 - `sidecar/test_fingerprinter.py` — fingerprinter unit tests (7 cases: extract, windows, stability, edit distance, find_patterns freq, min-freq filter, live DB)
 - `sidecar/test_ranker.py` — ranker unit tests (5 cases: score_workflow, ordering, human formatting, live DB summary, empty list)
@@ -160,9 +161,10 @@ personal-process-miner/
 - `sidecar/test_llm_explainer.py` — LLM explainer unit tests (5 cases: backend empty, invalid Ollama URL, disabled explain_script, fence stripping, get/update automation by id — all offline)
 - `sidecar/test_scheduler.py` — scheduler unit tests (5 tests, 12 assertions: get_platform, schedule/unschedule Windows, list_scheduled, is_script_safe)
 - `sidecar/test_dom_capture.py` — DOM capture unit tests (6 cases: dom_events table, insert+query, HTTP /status, POST /dom-events, generate_from_dom_events empty + 2 clicks)
+- `sidecar/test_providers.py` — provider tests (6 cases: get_available_backends, is_vision_available no-backend, test_connection invalid key all 5 backends, set_vision_config namespaced key, switching backend updates check_vision, all 5 error types handled)
 - `sidecar/seed.py` — not a test, but verifies seeder runs clean (59 rows)
 
-CI runs: test_db, test_segmenter, test_fingerprinter, test_ranker, test_llm_explainer
+CI runs: test_db, test_segmenter, test_fingerprinter, test_ranker, test_llm_explainer, test_providers (CI-safe, all offline)
 Local-only: test_ipc (requires seed), test_capture, test_macro_recorder, test_playwright_gen, test_scheduler, test_vision (requires display), test_vision_replay (requires display + pyautogui), test_nl_planner (all offline, passes CI-safe too)
 
 ## Known Issues
@@ -216,6 +218,11 @@ Local-only: test_ipc (requires seed), test_capture, test_macro_recorder, test_pl
 - **`get_extension_zip` IPC handler**: walks `chrome-extension/` dir, builds in-memory zip, returns base64. DOMCapture.tsx decodes + triggers browser download of `ppm-chrome-extension.zip`.
 - **`DOMCapture.tsx` collapsible panel**: server health check via `fetch` to `localhost:7834/status` (2s timeout). Download Extension, session ID input, Generate Script button, script output pre-block.
 - **`DOMCapture` removed from Automations page (P23)**: `DOMCapture.tsx` deleted. Import and `<DOMCapture />` removed from `Automations.tsx`. Chrome extension backend (`chrome-extension/`, `sidecar/main.py` HTTP server, `sidecar/db.py` dom_events table, `sidecar/playwright_gen.py` generate_from_dom_events) all intact.
+- **Universal AI provider support (P24)**: `vision_ai.py` supports 5 backends: claude (claude-sonnet-4-20250514), openai (gpt-4o), groq (meta-llama/llama-4-scout-17b-16e-instruct), gemini (gemini-2.0-flash), grok (grok-2-vision-1212). Grok uses OpenAI SDK with `base_url="https://api.x.ai/v1"`. Gemini uses `google.generativeai` SDK + PIL image. `google-generativeai` added to requirements.txt.
+- **Per-provider API key storage (P24)**: Keys stored under `vision_api_key_{backend}` (e.g. `vision_api_key_claude`, `vision_api_key_gemini`). Active backend stored under `vision_backend`. Switching providers does not overwrite saved keys — each provider retains its key independently.
+- **`test_connection` function + IPC (P24)**: `vision_ai.test_connection(backend, api_key)` sends 1x1 white PNG test image. Returns `{"ok": bool, "error": str|null, "model": str}`. Never raises. `test_vision_connection` IPC handler wraps it. All errors classified into: `invalid_api_key`, `rate_limited`, `network_error`, `vision_not_supported`.
+- **Settings page AI Vision section rebuilt (P24)**: 5 provider cards in 2-col grid. Each card: emoji + name + description + password input + Test Connection + Set as Active buttons. Active card highlighted with blue border. Active provider shown at top. Keys saved per-provider, not overwritten on switch.
+- **`check_vision` now returns `backends` list (P24)**: Response includes `{"type": "vision_status", ..., "backends": ["claude", "openai", "groq", "gemini", "grok"]}`.
 - **InsightsCard uses hardcoded colors, not CSS vars**: card must look identical regardless of OS dark/light mode since it's designed for screenshotting. Width fixed at 600px.
 - **No html2canvas**: Tauri WebView doesn't expose clipboard image write without a custom Rust command. "📋 Copy as Image" button shows the OS screenshot tip instead (Win+Shift+S / Cmd+Shift+4). Deferred to P18+ if a proper clipboard image API is needed.
 - **GitHub URL hardcoded**: `github.com/zaydmulani09/personal-process-miner` read from `git remote get-url origin`.

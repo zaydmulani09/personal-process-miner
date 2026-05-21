@@ -27,13 +27,13 @@ def _tables() -> set[str]:
 
 def main() -> None:
     # All tables must exist after migrations (including privacy_settings from migration 5).
-    expected = {"schema_migrations", "events", "sessions", "workflows", "automations", "privacy_settings"}
+    expected = {"schema_migrations", "events", "sessions", "workflows", "automations", "privacy_settings", "dom_events"}
     missing = expected - _tables()
     assert not missing, f"Missing tables: {missing}"
 
-    # schema_migrations must have 5 rows.
+    # schema_migrations must have 6 rows (migrations 1-6, dom_events added in P22).
     count = _mem.execute("SELECT COUNT(*) FROM schema_migrations").fetchone()[0]
-    assert count == 5, f"Expected 5 migration rows, got {count}"
+    assert count == 6, f"Expected 6 migration rows, got {count}"
 
     # --- Privacy settings tests ---
 
