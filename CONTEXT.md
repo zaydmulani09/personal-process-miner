@@ -149,6 +149,7 @@ personal-process-miner/
 | P23 | Remove DOMCapture UI from Automations page; chrome extension backend intact | complete |
 | P24 | Universal AI provider support — claude, openai, groq, gemini, grok; test connection UI; per-provider key storage | complete |
 | P25 | Pre-launch security audit — localhost binding confirmed, CORS hardened, input validation, rate limiting, privacy policy, terms | complete |
+| P26 | Fix: sidecar health indicator, deactivate provider, granular error messages all backends | complete |
 
 ## Test Count
 
@@ -229,6 +230,12 @@ Local-only: test_ipc (requires seed), test_capture, test_macro_recorder, test_pl
 - **Security hardening (P25)**: HTTP server `127.0.0.1` binding confirmed. CORS changed from `*` to `http://localhost`. `POST /dom-events` rejects bodies >1MB (413) and rate-limits at 60 req/min per IP (429). All SQL confirmed parameterized. `_validate()` helper added to `main.py` — applied to every handler accepting user input. No hardcoded secrets in `src/` (placeholder strings like `sk-ant-...` are input placeholders only). API keys stored as plain strings in `privacy_settings` SQLite — OS keychain integration is a future improvement.
 - **test_dom_capture.py isolation fix (P25)**: `TestGenerateFromDomEvents.setUp` added to delete test session rows before each test, preventing stale data accumulation across repeated runs.
 - **PRIVACY.md and TERMS.md created (P25)**: Root-level policy docs. README updated with Privacy (links PRIVACY.md) and Security sections.
+- **`ping` IPC handler updated (P26)**: Returns `{"type": "pong", "ok": True}`. Used by Settings page health check.
+- **`deactivate_vision` IPC handler added (P26)**: Sets `vision_backend` to `""` without deleting per-provider API keys. Saved keys remain for one-click reactivation.
+- **Sidecar startup log (P26)**: `print("PPM sidecar v1.0.0 starting...", file=sys.stderr)` and `"PPM sidecar ready."` on init — helps diagnose exe launch.
+- **Granular error classification (P26)**: `_classify_error` in `vision_ai.py` now checks `exc.status_code` (401→invalid_api_key, 429→rate_limited, 400→vision_not_supported), exception class names (`Connection*`→network_error), and falls back to `f"unknown_error: {str(exc)[:80]}"` instead of always returning `network_error`.
+- **Settings sidecar health indicator (P26)**: Green/red dot at top of Settings page. Pings sidecar on mount with 3s timeout. Shows "Sidecar running" or "Sidecar not running — try restarting the app".
+- **Deactivate button in AI Vision section (P26)**: Shown next to active provider status when provider is active. Calls `deactivate_vision` IPC → clears active highlight on all cards → saved keys untouched.
 - **InsightsCard uses hardcoded colors, not CSS vars**: card must look identical regardless of OS dark/light mode since it's designed for screenshotting. Width fixed at 600px.
 - **No html2canvas**: Tauri WebView doesn't expose clipboard image write without a custom Rust command. "📋 Copy as Image" button shows the OS screenshot tip instead (Win+Shift+S / Cmd+Shift+4). Deferred to P18+ if a proper clipboard image API is needed.
 - **GitHub URL hardcoded**: `github.com/zaydmulani09/personal-process-miner` read from `git remote get-url origin`.

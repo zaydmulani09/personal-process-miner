@@ -66,12 +66,23 @@ export default function Settings({ onNavigate }: Props) {
   const [loading, setLoading] = useState(true);
   const newAppRef = useRef<HTMLInputElement>(null);
 
+  const [sidecarHealth, setSidecarHealth] = useState<"checking" | "ok" | "error">("checking");
   const [providerKeys, setProviderKeys] = useState<Record<ProviderKey, string>>(EMPTY_PROVIDER_MAP());
   const [activeProvider, setActiveProvider] = useState<ProviderKey | null>(null);
   const [activeModel, setActiveModel] = useState<string | null>(null);
   const [testResults, setTestResults] = useState<Record<ProviderKey, { ok: boolean; error?: string; model?: string } | null>>(EMPTY_TEST_MAP());
   const [testing, setTesting] = useState<Record<ProviderKey, boolean>>(EMPTY_BOOL_MAP());
   const [settingActive, setSettingActive] = useState<ProviderKey | null>(null);
+  const [deactivating, setDeactivating] = useState(false);
+
+  useEffect(() => {
+    Promise.race([
+      sendToSidecar({ type: "ping" }),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("timeout")), 3000)),
+    ])
+      .then(() => setSidecarHealth("ok"))
+      .catch(() => setSidecarHealth("error"));
+  }, []);
 
   useEffect(() => {
     Promise.all([
@@ -140,6 +151,19 @@ export default function Settings({ onNavigate }: Props) {
     }
   };
 
+  const deactivateVision = async () => {
+    setDeactivating(true);
+    try {
+      await sendToSidecar({ type: "deactivate_vision" });
+      setActiveProvider(null);
+      setActiveModel(null);
+    } catch {
+      // ignore
+    } finally {
+      setDeactivating(false);
+    }
+  };
+
   const setSetting = async (key: string, value: string) => {
     setSettings((prev) => ({ ...prev, [key]: value }));
     await sendToSidecar({ type: "set_setting", key, value });
@@ -199,13 +223,34 @@ export default function Settings({ onNavigate }: Props) {
       }}
     >
       {/* Header */}
-      <div style={{ marginBottom: 28 }}>
+      <div style={{ marginBottom: 16 }}>
         <h1 style={{ fontSize: 22, fontWeight: 700, margin: "0 0 4px", color: "#0f172a" }}>
           Privacy & Settings
         </h1>
         <p style={{ margin: 0, fontSize: 14, color: "#64748b" }}>
           All data stays on your machine. Nothing is sent to the cloud.
         </p>
+      </div>
+
+      {/* Sidecar health */}
+      <div style={{
+        display: "flex", alignItems: "center", gap: 8, marginBottom: 20,
+        padding: "8px 14px", borderRadius: 8,
+        background: sidecarHealth === "ok" ? "#f0fdf4" : sidecarHealth === "error" ? "#fef2f2" : "#f8fafc",
+        border: `1px solid ${sidecarHealth === "ok" ? "#bbf7d0" : sidecarHealth === "error" ? "#fecaca" : "#e2e8f0"}`,
+        fontSize: 13,
+      }}>
+        <span style={{
+          width: 8, height: 8, borderRadius: "50%", flexShrink: 0,
+          background: sidecarHealth === "ok" ? "#22c55e" : sidecarHealth === "error" ? "#ef4444" : "#94a3b8",
+        }} />
+        <span style={{ color: sidecarHealth === "ok" ? "#15803d" : sidecarHealth === "error" ? "#dc2626" : "#64748b", fontWeight: 500 }}>
+          {sidecarHealth === "ok"
+            ? "Sidecar running"
+            : sidecarHealth === "error"
+            ? "Sidecar not running — try restarting the app"
+            : "Checking sidecar…"}
+        </span>
       </div>
 
       {/* Capture Privacy */}
@@ -404,12 +449,27 @@ export default function Settings({ onNavigate }: Props) {
           borderRadius: 6,
           border: `1px solid ${activeProvider ? "#bbf7d0" : "#e2e8f0"}`,
           fontSize: 13,
-          color: activeProvider ? "#15803d" : "#94a3b8",
-          fontWeight: 500,
+          display: "flex", alignItems: "center", gap: 10,
         }}>
-          {activeProvider
-            ? `Active: ${PROVIDERS.find(p => p.id === activeProvider)?.name} (${activeModel ?? ""})`
-            : "No provider configured"}
+          <span style={{ color: activeProvider ? "#15803d" : "#94a3b8", fontWeight: 500, flex: 1 }}>
+            {activeProvider
+              ? `Active: ${PROVIDERS.find(p => p.id === activeProvider)?.name} (${activeModel ?? ""})`
+              : "No provider configured"}
+          </span>
+          {activeProvider && (
+            <button
+              onClick={deactivateVision}
+              disabled={deactivating}
+              style={{
+                padding: "3px 10px", fontSize: 12, borderRadius: 5,
+                border: "1px solid #fca5a5", background: "#fff5f5",
+                color: "#dc2626", cursor: deactivating ? "not-allowed" : "pointer",
+                opacity: deactivating ? 0.6 : 1,
+              }}
+            >
+              {deactivating ? "…" : "⏹ Deactivate"}
+            </button>
+          )}
         </div>
 
         {/* Provider cards 2-col grid */}
