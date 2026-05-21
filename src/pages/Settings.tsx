@@ -35,28 +35,27 @@ interface Props {
   onNavigate: (page: string) => void;
 }
 
-type VisionBackend = "" | "claude" | "openai" | "groq";
+type ProviderKey = "claude" | "openai" | "groq" | "gemini" | "grok";
 
-const VISION_BACKENDS = [
-  { value: "" as VisionBackend, label: "Disabled" },
-  { value: "claude" as VisionBackend, label: "Claude (Anthropic)" },
-  { value: "openai" as VisionBackend, label: "OpenAI (GPT-4o)" },
-  { value: "groq" as VisionBackend, label: "Groq (Fast & Free)" },
+const PROVIDERS: { id: ProviderKey; emoji: string; name: string; desc: string; placeholder: string; link: string }[] = [
+  { id: "claude", emoji: "🟠", name: "Claude", desc: "Best quality, Anthropic", placeholder: "sk-ant-...", link: "https://console.anthropic.com" },
+  { id: "openai", emoji: "🟢", name: "OpenAI", desc: "GPT-4o vision", placeholder: "sk-...", link: "https://platform.openai.com/api-keys" },
+  { id: "groq", emoji: "⚡", name: "Groq", desc: "Fast & free tier", placeholder: "gsk_...", link: "https://console.groq.com" },
+  { id: "gemini", emoji: "🔵", name: "Gemini", desc: "Google Gemini Flash", placeholder: "AIza...", link: "https://aistudio.google.com/apikey" },
+  { id: "grok", emoji: "⬛", name: "Grok", desc: "xAI Grok vision", placeholder: "xai-...", link: "https://console.x.ai" },
 ];
 
-const VISION_PLACEHOLDERS: Record<VisionBackend, string> = {
-  "": "API key",
-  claude: "sk-ant-...",
-  openai: "sk-...",
-  groq: "gsk_...",
-};
+const EMPTY_PROVIDER_MAP = (): Record<ProviderKey, string> => ({
+  claude: "", openai: "", groq: "", gemini: "", grok: "",
+});
 
-const VISION_LINKS: Record<VisionBackend, string> = {
-  "": "",
-  claude: "https://console.anthropic.com",
-  openai: "https://platform.openai.com/api-keys",
-  groq: "https://console.groq.com",
-};
+const EMPTY_TEST_MAP = (): Record<ProviderKey, { ok: boolean; error?: string; model?: string } | null> => ({
+  claude: null, openai: null, groq: null, gemini: null, grok: null,
+});
+
+const EMPTY_BOOL_MAP = (): Record<ProviderKey, boolean> => ({
+  claude: false, openai: false, groq: false, gemini: false, grok: false,
+});
 
 export default function Settings({ onNavigate }: Props) {
   const [settings, setSettings] = useState<Settings>({});
@@ -67,10 +66,12 @@ export default function Settings({ onNavigate }: Props) {
   const [loading, setLoading] = useState(true);
   const newAppRef = useRef<HTMLInputElement>(null);
 
-  const [visionBackend, setVisionBackend] = useState<VisionBackend>("");
-  const [visionKey, setVisionKey] = useState("");
-  const [visionStatus, setVisionStatus] = useState<{ available: boolean; backend: string | null } | null>(null);
-  const [visionSaving, setVisionSaving] = useState(false);
+  const [providerKeys, setProviderKeys] = useState<Record<ProviderKey, string>>(EMPTY_PROVIDER_MAP());
+  const [activeProvider, setActiveProvider] = useState<ProviderKey | null>(null);
+  const [activeModel, setActiveModel] = useState<string | null>(null);
+  const [testResults, setTestResults] = useState<Record<ProviderKey, { ok: boolean; error?: string; model?: string } | null>>(EMPTY_TEST_MAP());
+  const [testing, setTesting] = useState<Record<ProviderKey, boolean>>(EMPTY_BOOL_MAP());
+  const [settingActive, setSettingActive] = useState<ProviderKey | null>(null);
 
   useEffect(() => {
     Promise.all([
@@ -78,25 +79,64 @@ export default function Settings({ onNavigate }: Props) {
       sendToSidecar({ type: "get_blocklist" }),
       sendToSidecar({ type: "check_vision" }),
     ]).then(([sResp, bResp, vResp]) => {
-      setSettings((sResp as { data: Settings }).data ?? {});
+      const s = (sResp as { data: Settings }).data ?? {};
+      setSettings(s);
       setBlocklist((bResp as { apps: string[] }).apps ?? []);
       const vs = vResp as { available: boolean; backend: string | null; model: string | null };
-      setVisionStatus({ available: vs.available, backend: vs.backend });
-      if (vs.backend) setVisionBackend(vs.backend as VisionBackend);
+      if (vs.available && vs.backend) {
+        setActiveProvider(vs.backend as ProviderKey);
+        setActiveModel(vs.model ?? null);
+      }
+      setProviderKeys({
+        claude: s["vision_api_key_claude"] ?? "",
+        openai: s["vision_api_key_openai"] ?? "",
+        groq: s["vision_api_key_groq"] ?? "",
+        gemini: s["vision_api_key_gemini"] ?? "",
+        grok: s["vision_api_key_grok"] ?? "",
+      });
       setLoading(false);
     }).catch(() => setLoading(false));
   }, []);
 
-  const saveVisionConfig = async () => {
-    setVisionSaving(true);
+  const testConnection = async (providerId: ProviderKey) => {
+    setTesting(prev => ({ ...prev, [providerId]: true }));
     try {
-      await sendToSidecar({ type: "set_vision_config", backend: visionBackend, api_key: visionKey });
-      const resp = await sendToSidecar({ type: "check_vision" }) as { available: boolean; backend: string | null };
-      setVisionStatus({ available: resp.available, backend: resp.backend });
-    } catch (e) {
+      const resp = await sendToSidecar({
+        type: "test_vision_connection",
+        backend: providerId,
+        api_key: providerKeys[providerId],
+      }) as { type: string; ok: boolean; error: string | null; model: string | null };
+      setTestResults(prev => ({
+        ...prev,
+        [providerId]: { ok: resp.ok, error: resp.error ?? undefined, model: resp.model ?? undefined },
+      }));
+    } catch {
+      setTestResults(prev => ({ ...prev, [providerId]: { ok: false, error: "connection failed" } }));
+    } finally {
+      setTesting(prev => ({ ...prev, [providerId]: false }));
+    }
+  };
+
+  const setAsActive = async (providerId: ProviderKey) => {
+    setSettingActive(providerId);
+    try {
+      await sendToSidecar({
+        type: "set_vision_config",
+        backend: providerId,
+        api_key: providerKeys[providerId],
+      });
+      const resp = await sendToSidecar({ type: "check_vision" }) as { available: boolean; backend: string | null; model: string | null };
+      if (resp.available && resp.backend) {
+        setActiveProvider(resp.backend as ProviderKey);
+        setActiveModel(resp.model ?? null);
+      } else {
+        setActiveProvider(null);
+        setActiveModel(null);
+      }
+    } catch {
       // ignore
     } finally {
-      setVisionSaving(false);
+      setSettingActive(null);
     }
   };
 
@@ -357,76 +397,95 @@ export default function Settings({ onNavigate }: Props) {
           Let AI see your screen to enable smart automations that work even when layouts change
         </div>
 
-        <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 14 }}>
-          {VISION_BACKENDS.map((b) => (
-            <label key={b.value} style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", fontSize: 14, color: "#0f172a" }}>
-              <input
-                type="radio"
-                name="vision_backend"
-                value={b.value}
-                checked={visionBackend === b.value}
-                onChange={() => setVisionBackend(b.value)}
-              />
-              {b.label}
-              {b.value && VISION_LINKS[b.value] && (
+        {/* Active provider status */}
+        <div style={{
+          marginBottom: 16, padding: "8px 12px",
+          background: activeProvider ? "#f0fdf4" : "#f8fafc",
+          borderRadius: 6,
+          border: `1px solid ${activeProvider ? "#bbf7d0" : "#e2e8f0"}`,
+          fontSize: 13,
+          color: activeProvider ? "#15803d" : "#94a3b8",
+          fontWeight: 500,
+        }}>
+          {activeProvider
+            ? `Active: ${PROVIDERS.find(p => p.id === activeProvider)?.name} (${activeModel ?? ""})`
+            : "No provider configured"}
+        </div>
+
+        {/* Provider cards 2-col grid */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>
+          {PROVIDERS.map(p => (
+            <div key={p.id} style={{
+              background: "#f8fafc",
+              border: `2px solid ${activeProvider === p.id ? "#3b82f6" : "#e2e8f0"}`,
+              borderRadius: 8,
+              padding: "14px 16px",
+            }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2 }}>
+                <span style={{ fontSize: 16 }}>{p.emoji}</span>
+                <span style={{ fontWeight: 600, fontSize: 14, color: "#0f172a" }}>{p.name}</span>
                 <a
-                  href={VISION_LINKS[b.value]}
+                  href={p.link}
                   target="_blank"
                   rel="noopener noreferrer"
-                  style={{ fontSize: 12, color: "#3b82f6", marginLeft: 4 }}
+                  style={{ marginLeft: "auto", fontSize: 11, color: "#3b82f6" }}
                 >
                   Get API key ↗
                 </a>
+              </div>
+              <div style={{ fontSize: 12, color: "#64748b", marginBottom: 10 }}>{p.desc}</div>
+              <input
+                type="password"
+                value={providerKeys[p.id]}
+                onChange={e => setProviderKeys(prev => ({ ...prev, [p.id]: e.target.value }))}
+                placeholder={p.placeholder}
+                style={{
+                  width: "100%", fontSize: 12, padding: "6px 8px",
+                  borderRadius: 6, border: "1px solid #e2e8f0",
+                  marginBottom: 8, boxSizing: "border-box",
+                }}
+              />
+              <div style={{ display: "flex", gap: 6 }}>
+                <button
+                  onClick={() => testConnection(p.id)}
+                  disabled={testing[p.id] || !providerKeys[p.id]}
+                  style={{
+                    flex: 1, padding: "5px 0", fontSize: 12, borderRadius: 6,
+                    border: "1px solid #e2e8f0", background: "#fff", color: "#475569",
+                    cursor: (testing[p.id] || !providerKeys[p.id]) ? "not-allowed" : "pointer",
+                    opacity: (testing[p.id] || !providerKeys[p.id]) ? 0.5 : 1,
+                  }}
+                >
+                  {testing[p.id] ? "Testing…" : "Test Connection"}
+                </button>
+                <button
+                  onClick={() => setAsActive(p.id)}
+                  disabled={settingActive === p.id || !providerKeys[p.id]}
+                  style={{
+                    flex: 1, padding: "5px 0", fontSize: 12, borderRadius: 6,
+                    border: "none",
+                    background: activeProvider === p.id ? "#3b82f6" : "#64748b",
+                    color: "#fff",
+                    cursor: (settingActive === p.id || !providerKeys[p.id]) ? "not-allowed" : "pointer",
+                    opacity: (settingActive === p.id || !providerKeys[p.id]) ? 0.5 : 1,
+                  }}
+                >
+                  {settingActive === p.id ? "Setting…" : activeProvider === p.id ? "✓ Active" : "Set as Active"}
+                </button>
+              </div>
+              {testResults[p.id] !== null && (
+                <div style={{ marginTop: 6, fontSize: 12, color: testResults[p.id]?.ok ? "#15803d" : "#dc2626" }}>
+                  {testResults[p.id]?.ok
+                    ? `✓ Connected — ${testResults[p.id]?.model}`
+                    : `✗ ${testResults[p.id]?.error}`}
+                </div>
               )}
-            </label>
+            </div>
           ))}
         </div>
 
-        {visionBackend !== "" && (
-          <input
-            type="password"
-            value={visionKey}
-            onChange={(e) => setVisionKey(e.target.value)}
-            placeholder={VISION_PLACEHOLDERS[visionBackend]}
-            style={{
-              width: "100%",
-              fontSize: 13,
-              padding: "7px 10px",
-              borderRadius: 6,
-              border: "1px solid #e2e8f0",
-              outline: "none",
-              marginBottom: 10,
-              boxSizing: "border-box",
-            }}
-          />
-        )}
-
-        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 10 }}>
-          <button
-            onClick={saveVisionConfig}
-            disabled={visionSaving}
-            style={{
-              padding: "7px 16px",
-              fontSize: 13,
-              borderRadius: 6,
-              border: "none",
-              background: visionSaving ? "#93c5fd" : "#3b82f6",
-              color: "#fff",
-              cursor: visionSaving ? "not-allowed" : "pointer",
-            }}
-          >
-            {visionSaving ? "Saving…" : "Save"}
-          </button>
-          {visionStatus && (
-            <span style={{ fontSize: 13, color: visionStatus.available ? "#15803d" : "#94a3b8", fontWeight: 500 }}>
-              {visionStatus.available ? `✓ Vision enabled — ${visionStatus.backend}` : "✗ Not configured"}
-            </span>
-          )}
-        </div>
-
         <p style={{ fontSize: 12, color: "#64748b", margin: 0, lineHeight: 1.6 }}>
-          Your API key is stored locally on your machine. Screenshots are only sent to the AI when you
-          trigger an automation — never during passive capture.
+          API keys stored locally in SQLite. Screenshots only sent when you trigger an action — never during passive capture.
         </p>
       </div>
 

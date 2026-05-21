@@ -1,3 +1,4 @@
+import base64
 import json
 import logging
 import re
@@ -16,8 +17,18 @@ _SYSTEM_PROMPT = (
 _MODELS = {
     "claude": "claude-sonnet-4-20250514",
     "openai": "gpt-4o",
-    "groq": "llama-3.2-90b-vision-preview",
+    "groq": "meta-llama/llama-4-scout-17b-16e-instruct",
+    "gemini": "gemini-2.0-flash",
+    "grok": "grok-2-vision-1212",
 }
+
+_SUPPORTED_BACKENDS = ["claude", "openai", "groq", "gemini", "grok"]
+
+# 1x1 white PNG base64 for connection testing
+_TEST_IMAGE_B64 = (
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk"
+    "+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+)
 
 
 def _strip_fences(text: str) -> str:
@@ -29,27 +40,52 @@ def _strip_fences(text: str) -> str:
 
 def _get_config() -> tuple[str, str, str]:
     backend = db.get_setting("vision_backend", "")
-    key = db.get_setting("vision_api_key", "")
+    key = db.get_setting(f"vision_api_key_{backend}", "") if backend else ""
     model = _MODELS.get(backend, "")
     return backend, key, model
 
 
+def get_available_backends() -> list:
+    return list(_SUPPORTED_BACKENDS)
+
+
 def is_vision_available() -> bool:
     backend, key, _ = _get_config()
-    if not backend:
-        logging.debug("vision_backend not set")
+    if backend not in _SUPPORTED_BACKENDS:
+        logging.debug("unknown vision_backend: %s", backend)
         return False
     if not key:
-        logging.debug("vision_api_key not set")
-        return False
-    if backend not in _MODELS:
-        logging.debug("unknown vision_backend: %s", backend)
+        logging.debug("vision_api_key_%s not set", backend)
         return False
     return True
 
 
-def _call_model(screenshot_b64: str, instruction: str) -> str:
-    backend, key, model = _get_config()
+def _classify_error(exc: Exception) -> str:
+    exc_name = type(exc).__name__
+    msg = str(exc).lower()
+    if any(x in exc_name for x in ["Authentication", "Unauthorized", "PermissionDenied"]):
+        return "invalid_api_key"
+    if any(x in exc_name for x in ["RateLimit", "ResourceExhausted"]):
+        return "rate_limited"
+    if any(x in msg for x in [
+        "invalid api key", "incorrect api key", "authentication", "unauthorized",
+        "api_key_invalid", "invalid_api_key", "permission denied", "401",
+        "api key", "credentials",
+    ]):
+        return "invalid_api_key"
+    if any(x in msg for x in ["rate limit", "rate_limit", "too many requests", "429", "quota"]):
+        return "rate_limited"
+    if any(x in msg for x in [
+        "connection", "timeout", "network", "unreachable",
+        "connection refused", "failed to connect", "name resolution",
+    ]):
+        return "network_error"
+    if any(x in msg for x in ["not support", "vision not", "image not", "multimodal"]):
+        return "vision_not_supported"
+    return "network_error"
+
+
+def _call_backend(backend: str, key: str, model: str, screenshot_b64: str, instruction: str) -> str:
     if backend == "claude":
         import anthropic
         client = anthropic.Anthropic(api_key=key)
@@ -73,9 +109,13 @@ def _call_model(screenshot_b64: str, instruction: str) -> str:
             }],
         )
         return response.content[0].text
-    elif backend == "openai":
+
+    elif backend in ("openai", "grok"):
         from openai import OpenAI
-        client = OpenAI(api_key=key)
+        kwargs: dict = {"api_key": key}
+        if backend == "grok":
+            kwargs["base_url"] = "https://api.x.ai/v1"
+        client = OpenAI(**kwargs)
         response = client.chat.completions.create(
             model=model,
             messages=[{
@@ -88,6 +128,7 @@ def _call_model(screenshot_b64: str, instruction: str) -> str:
             max_tokens=1024,
         )
         return response.choices[0].message.content
+
     elif backend == "groq":
         from groq import Groq
         client = Groq(api_key=key)
@@ -103,8 +144,41 @@ def _call_model(screenshot_b64: str, instruction: str) -> str:
             max_tokens=1024,
         )
         return response.choices[0].message.content
+
+    elif backend == "gemini":
+        import google.generativeai as genai
+        from PIL import Image
+        import io
+        genai.configure(api_key=key)
+        genai_model = genai.GenerativeModel(model)
+        img_bytes = base64.b64decode(screenshot_b64)
+        img = Image.open(io.BytesIO(img_bytes))
+        response = genai_model.generate_content([instruction, img])
+        return response.text
+
     else:
         raise ValueError(f"unsupported backend: {backend}")
+
+
+def _call_model(screenshot_b64: str, instruction: str) -> str:
+    backend, key, model = _get_config()
+    return _call_backend(backend, key, model, screenshot_b64, instruction)
+
+
+def test_connection(backend: str, api_key: str) -> dict:
+    model = _MODELS.get(backend, "")
+    if not model:
+        return {"ok": False, "error": "invalid_api_key", "model": None}
+    try:
+        _call_backend(
+            backend, api_key, model, _TEST_IMAGE_B64,
+            'Describe this image in one word. Return JSON: {"description": "word"}'
+        )
+        return {"ok": True, "error": None, "model": model}
+    except Exception as exc:
+        err = _classify_error(exc)
+        logging.debug("test_connection %s error: %s", backend, exc)
+        return {"ok": False, "error": err, "model": model}
 
 
 def analyze_screen(screenshot_b64: str, instruction: str) -> dict:
@@ -114,8 +188,9 @@ def analyze_screen(screenshot_b64: str, instruction: str) -> dict:
         raw = _call_model(screenshot_b64, instruction)
         return json.loads(_strip_fences(raw))
     except Exception as exc:
+        err = _classify_error(exc)
         logging.warning("analyze_screen error: %s", exc)
-        return {"ok": False, "error": str(exc)}
+        return {"ok": False, "error": err}
 
 
 def find_element(screenshot_b64: str, description: str) -> dict:
@@ -140,8 +215,9 @@ def find_element(screenshot_b64: str, description: str) -> dict:
         result["y"] = int(result.get("y", 0))
         return result
     except Exception as exc:
+        err = _classify_error(exc)
         logging.warning("find_element error: %s", exc)
-        return {"ok": False, "error": str(exc)}
+        return {"ok": False, "error": err}
 
 
 def describe_screen(screenshot_b64: str) -> dict:
@@ -160,8 +236,9 @@ def describe_screen(screenshot_b64: str) -> dict:
         raw = _call_model(screenshot_b64, instruction)
         return json.loads(_strip_fences(raw))
     except Exception as exc:
+        err = _classify_error(exc)
         logging.warning("describe_screen error: %s", exc)
-        return {"ok": False, "error": str(exc)}
+        return {"ok": False, "error": err}
 
 
 def verify_action(screenshot_b64: str, expected_state: str) -> dict:
@@ -182,5 +259,6 @@ def verify_action(screenshot_b64: str, expected_state: str) -> dict:
         raw = _call_model(screenshot_b64, instruction)
         return json.loads(_strip_fences(raw))
     except Exception as exc:
+        err = _classify_error(exc)
         logging.warning("verify_action error: %s", exc)
-        return {"ok": False, "error": str(exc)}
+        return {"ok": False, "error": err}
