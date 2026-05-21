@@ -35,6 +35,29 @@ interface Props {
   onNavigate: (page: string) => void;
 }
 
+type VisionBackend = "" | "claude" | "openai" | "groq";
+
+const VISION_BACKENDS = [
+  { value: "" as VisionBackend, label: "Disabled" },
+  { value: "claude" as VisionBackend, label: "Claude (Anthropic)" },
+  { value: "openai" as VisionBackend, label: "OpenAI (GPT-4o)" },
+  { value: "groq" as VisionBackend, label: "Groq (Fast & Free)" },
+];
+
+const VISION_PLACEHOLDERS: Record<VisionBackend, string> = {
+  "": "API key",
+  claude: "sk-ant-...",
+  openai: "sk-...",
+  groq: "gsk_...",
+};
+
+const VISION_LINKS: Record<VisionBackend, string> = {
+  "": "",
+  claude: "https://console.anthropic.com",
+  openai: "https://platform.openai.com/api-keys",
+  groq: "https://console.groq.com",
+};
+
 export default function Settings({ onNavigate }: Props) {
   const [settings, setSettings] = useState<Settings>({});
   const [blocklist, setBlocklist] = useState<string[]>([]);
@@ -44,16 +67,38 @@ export default function Settings({ onNavigate }: Props) {
   const [loading, setLoading] = useState(true);
   const newAppRef = useRef<HTMLInputElement>(null);
 
+  const [visionBackend, setVisionBackend] = useState<VisionBackend>("");
+  const [visionKey, setVisionKey] = useState("");
+  const [visionStatus, setVisionStatus] = useState<{ available: boolean; backend: string | null } | null>(null);
+  const [visionSaving, setVisionSaving] = useState(false);
+
   useEffect(() => {
     Promise.all([
       sendToSidecar({ type: "get_settings" }),
       sendToSidecar({ type: "get_blocklist" }),
-    ]).then(([sResp, bResp]) => {
+      sendToSidecar({ type: "check_vision" }),
+    ]).then(([sResp, bResp, vResp]) => {
       setSettings((sResp as { data: Settings }).data ?? {});
       setBlocklist((bResp as { apps: string[] }).apps ?? []);
+      const vs = vResp as { available: boolean; backend: string | null; model: string | null };
+      setVisionStatus({ available: vs.available, backend: vs.backend });
+      if (vs.backend) setVisionBackend(vs.backend as VisionBackend);
       setLoading(false);
     }).catch(() => setLoading(false));
   }, []);
+
+  const saveVisionConfig = async () => {
+    setVisionSaving(true);
+    try {
+      await sendToSidecar({ type: "set_vision_config", backend: visionBackend, api_key: visionKey });
+      const resp = await sendToSidecar({ type: "check_vision" }) as { available: boolean; backend: string | null };
+      setVisionStatus({ available: resp.available, backend: resp.backend });
+    } catch (e) {
+      // ignore
+    } finally {
+      setVisionSaving(false);
+    }
+  };
 
   const setSetting = async (key: string, value: string) => {
     setSettings((prev) => ({ ...prev, [key]: value }));
@@ -303,6 +348,86 @@ export default function Settings({ onNavigate }: Props) {
         {purgeMsg && !purgeMsg.startsWith("Purged:") && (
           <span style={{ marginLeft: 12, fontSize: 13, color: "#15803d" }}>{purgeMsg}</span>
         )}
+      </div>
+
+      {/* AI Vision */}
+      <div style={sectionStyle}>
+        <div style={labelStyle}>AI Vision</div>
+        <div style={subStyle}>
+          Let AI see your screen to enable smart automations that work even when layouts change
+        </div>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 14 }}>
+          {VISION_BACKENDS.map((b) => (
+            <label key={b.value} style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", fontSize: 14, color: "#0f172a" }}>
+              <input
+                type="radio"
+                name="vision_backend"
+                value={b.value}
+                checked={visionBackend === b.value}
+                onChange={() => setVisionBackend(b.value)}
+              />
+              {b.label}
+              {b.value && VISION_LINKS[b.value] && (
+                <a
+                  href={VISION_LINKS[b.value]}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{ fontSize: 12, color: "#3b82f6", marginLeft: 4 }}
+                >
+                  Get API key ↗
+                </a>
+              )}
+            </label>
+          ))}
+        </div>
+
+        {visionBackend !== "" && (
+          <input
+            type="password"
+            value={visionKey}
+            onChange={(e) => setVisionKey(e.target.value)}
+            placeholder={VISION_PLACEHOLDERS[visionBackend]}
+            style={{
+              width: "100%",
+              fontSize: 13,
+              padding: "7px 10px",
+              borderRadius: 6,
+              border: "1px solid #e2e8f0",
+              outline: "none",
+              marginBottom: 10,
+              boxSizing: "border-box",
+            }}
+          />
+        )}
+
+        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 10 }}>
+          <button
+            onClick={saveVisionConfig}
+            disabled={visionSaving}
+            style={{
+              padding: "7px 16px",
+              fontSize: 13,
+              borderRadius: 6,
+              border: "none",
+              background: visionSaving ? "#93c5fd" : "#3b82f6",
+              color: "#fff",
+              cursor: visionSaving ? "not-allowed" : "pointer",
+            }}
+          >
+            {visionSaving ? "Saving…" : "Save"}
+          </button>
+          {visionStatus && (
+            <span style={{ fontSize: 13, color: visionStatus.available ? "#15803d" : "#94a3b8", fontWeight: 500 }}>
+              {visionStatus.available ? `✓ Vision enabled — ${visionStatus.backend}` : "✗ Not configured"}
+            </span>
+          )}
+        </div>
+
+        <p style={{ fontSize: 12, color: "#64748b", margin: 0, lineHeight: 1.6 }}>
+          Your API key is stored locally on your machine. Screenshots are only sent to the AI when you
+          trigger an automation — never during passive capture.
+        </p>
       </div>
 
       {/* Danger Zone */}

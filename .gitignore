@@ -13,6 +13,7 @@ pnpm-debug.log*
 lerna-debug.log*
 
 src-tauri/binaries/
+binaries/
 build/
 *.spec
 node_modules

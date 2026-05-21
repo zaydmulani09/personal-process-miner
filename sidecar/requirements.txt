@@ -2,3 +2,8 @@ pynput
 pygetwindow
 pyautogui
 playwright
+anthropic
+openai
+Pillow
+mss
+groq
