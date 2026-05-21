@@ -94,6 +94,13 @@ class TestHTTPServer(unittest.TestCase):
 
 
 class TestGenerateFromDomEvents(unittest.TestCase):
+    def setUp(self):
+        import db
+        conn = db._get_conn()
+        with db._lock:
+            conn.execute("DELETE FROM dom_events WHERE session_id = 'gen-test-session'")
+            conn.commit()
+
     def test_empty_session(self):
         import playwright_gen
         script = playwright_gen.generate_from_dom_events("nonexistent-session-xyz")

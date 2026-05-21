@@ -109,6 +109,8 @@ personal-process-miner/
 │   ├── tauri.svg
 │   └── vite.svg
 ├── CONTEXT.md
+├── PRIVACY.md             # privacy policy — local-only, no telemetry, AI vision opt-in
+├── TERMS.md               # terms of use — personal use only, as-is
 ├── PROMPT_ENGINEER_HANDOFF.md
 ├── .gitignore
 ├── index.html
@@ -146,6 +148,7 @@ personal-process-miner/
 | P22 | Chrome extension for DOM event capture, local HTTP server (port 7834), selector-based Playwright gen, DOMCapture UI | complete |
 | P23 | Remove DOMCapture UI from Automations page; chrome extension backend intact | complete |
 | P24 | Universal AI provider support — claude, openai, groq, gemini, grok; test connection UI; per-provider key storage | complete |
+| P25 | Pre-launch security audit — localhost binding confirmed, CORS hardened, input validation, rate limiting, privacy policy, terms | complete |
 
 ## Test Count
 
@@ -223,6 +226,9 @@ Local-only: test_ipc (requires seed), test_capture, test_macro_recorder, test_pl
 - **`test_connection` function + IPC (P24)**: `vision_ai.test_connection(backend, api_key)` sends 1x1 white PNG test image. Returns `{"ok": bool, "error": str|null, "model": str}`. Never raises. `test_vision_connection` IPC handler wraps it. All errors classified into: `invalid_api_key`, `rate_limited`, `network_error`, `vision_not_supported`.
 - **Settings page AI Vision section rebuilt (P24)**: 5 provider cards in 2-col grid. Each card: emoji + name + description + password input + Test Connection + Set as Active buttons. Active card highlighted with blue border. Active provider shown at top. Keys saved per-provider, not overwritten on switch.
 - **`check_vision` now returns `backends` list (P24)**: Response includes `{"type": "vision_status", ..., "backends": ["claude", "openai", "groq", "gemini", "grok"]}`.
+- **Security hardening (P25)**: HTTP server `127.0.0.1` binding confirmed. CORS changed from `*` to `http://localhost`. `POST /dom-events` rejects bodies >1MB (413) and rate-limits at 60 req/min per IP (429). All SQL confirmed parameterized. `_validate()` helper added to `main.py` — applied to every handler accepting user input. No hardcoded secrets in `src/` (placeholder strings like `sk-ant-...` are input placeholders only). API keys stored as plain strings in `privacy_settings` SQLite — OS keychain integration is a future improvement.
+- **test_dom_capture.py isolation fix (P25)**: `TestGenerateFromDomEvents.setUp` added to delete test session rows before each test, preventing stale data accumulation across repeated runs.
+- **PRIVACY.md and TERMS.md created (P25)**: Root-level policy docs. README updated with Privacy (links PRIVACY.md) and Security sections.
 - **InsightsCard uses hardcoded colors, not CSS vars**: card must look identical regardless of OS dark/light mode since it's designed for screenshotting. Width fixed at 600px.
 - **No html2canvas**: Tauri WebView doesn't expose clipboard image write without a custom Rust command. "📋 Copy as Image" button shows the OS screenshot tip instead (Win+Shift+S / Cmd+Shift+4). Deferred to P18+ if a proper clipboard image API is needed.
 - **GitHub URL hardcoded**: `github.com/zaydmulani09/personal-process-miner` read from `git remote get-url origin`.

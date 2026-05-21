@@ -22,6 +22,7 @@ The first time you see "you wasted 4 hours this week switching between these thr
 - **Local-first** — all data stays on your machine, no accounts, no sync, no telemetry
 - **Automatic sequence detection** — sliding-window fingerprinting finds repeated app-switch patterns without any manual tagging
 - **Script generation** — produces runnable PyAutoGUI macros and Playwright browser scripts
+- **Universal AI Vision** — choose from Claude, OpenAI (GPT-4o), Groq, Gemini, or Grok for smart screen-aware automations (opt-in, key stored locally)
 - **Optional AI improvement** — connect Ollama (local) or Claude API for smart script refactoring (opt-in via env vars)
 - **Privacy controls** — blocklist specific apps, purge all data anytime, control exactly what gets recorded
 - **Onboarding wizard** — first-run flow explains what's recorded, asks for permissions, runs a 60-second demo
@@ -85,6 +86,19 @@ With a backend configured, each automation card gains an "✨ Improve" button th
 **What is never recorded:** what you type (keystrokes are masked as `[key]` by default), passwords, screen contents, activity from any app on your blocklist.
 
 **To purge:** open Settings → Danger Zone → type `DELETE` → Purge All Data. All events, sessions, workflows, and automations are deleted immediately from the local DB. Nothing to call home about.
+
+All data is stored locally in a SQLite database on your device — no telemetry, no analytics, no cloud sync. **AI Vision is fully opt-in**: screenshots are only sent to your chosen AI provider when you explicitly trigger a vision action. API keys are stored locally and never transmitted to the app developers.
+
+See [PRIVACY.md](PRIVACY.md) for the full privacy policy.
+
+## Security
+
+- **HTTP server binds to localhost only** (`127.0.0.1:7834`) — no external network exposure
+- **No data leaves your device** except optional AI Vision API calls you explicitly configure
+- **API keys stored locally** in SQLite — never sent to app developers
+- **Input validation** on all IPC handlers — type checks, size limits, list caps
+- **Rate limiting** on the local HTTP server — 60 requests/minute per IP
+- All SQL queries use parameterized statements — no string interpolation with user input
 
 ## Development
 
