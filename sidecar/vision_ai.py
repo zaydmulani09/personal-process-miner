@@ -1,4 +1,5 @@
 import base64
+import io
 import json
 import logging
 import re
@@ -24,11 +25,12 @@ _MODELS = {
 
 _SUPPORTED_BACKENDS = ["claude", "openai", "groq", "gemini", "grok"]
 
-# 1x1 white PNG base64 for connection testing
-_TEST_IMAGE_B64 = (
-    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk"
-    "+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
-)
+
+def _make_test_image_b64() -> str:
+    from PIL import Image
+    buf = io.BytesIO()
+    Image.new("RGB", (1, 1), (255, 255, 255)).save(buf, format="PNG")
+    return base64.b64encode(buf.getvalue()).decode()
 
 
 def _strip_fences(text: str) -> str:
@@ -156,7 +158,7 @@ def _call_backend(backend: str, key: str, model: str, screenshot_b64: str, instr
             messages=[{
                 "role": "user",
                 "content": [
-                    {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{screenshot_b64}"}},
+                    {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{screenshot_b64}", "detail": "low"}},
                     {"type": "text", "text": instruction},
                 ],
             }],
@@ -189,8 +191,9 @@ def test_connection(backend: str, api_key: str) -> dict:
     if not model:
         return {"ok": False, "error": "invalid_api_key", "model": None}
     try:
+        test_b64 = _make_test_image_b64()
         _call_backend(
-            backend, api_key, model, _TEST_IMAGE_B64,
+            backend, api_key, model, test_b64,
             'Describe this image in one word. Return JSON: {"description": "word"}'
         )
         return {"ok": True, "error": None, "model": model}
