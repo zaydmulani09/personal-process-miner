@@ -21,19 +21,23 @@ def _ts(base: datetime, delta_minutes: float = 0) -> datetime:
     return base + timedelta(minutes=delta_minutes)
 
 
+def _ts_s(base: datetime, delta_seconds: float = 0) -> datetime:
+    return base + timedelta(seconds=delta_seconds)
+
+
 _BASE = datetime(2026, 5, 19, 10, 0, 0, tzinfo=timezone.utc)
 _MIDNIGHT = datetime(2026, 5, 18, 23, 58, 0, tzinfo=timezone.utc)
 
 
 def test_idle_gap_split() -> None:
     evts = [
-        _evt(1, _ts(_BASE, 0)),
-        _evt(2, _ts(_BASE, 1)),
-        _evt(3, _ts(_BASE, 2)),
-        # 6-minute gap → new session
-        _evt(4, _ts(_BASE, 8)),
-        _evt(5, _ts(_BASE, 9)),
-        _evt(6, _ts(_BASE, 10)),
+        _evt(1, _ts_s(_BASE, 0)),
+        _evt(2, _ts_s(_BASE, 10)),
+        _evt(3, _ts_s(_BASE, 20)),
+        # 60-second gap → new session (threshold is 30s)
+        _evt(4, _ts_s(_BASE, 80)),
+        _evt(5, _ts_s(_BASE, 90)),
+        _evt(6, _ts_s(_BASE, 100)),
     ]
     sessions = segmenter.segment_events(evts)
     assert len(sessions) == 2, f"Expected 2 sessions, got {len(sessions)}: {sessions}"
@@ -52,11 +56,11 @@ def test_midnight_boundary_split() -> None:
 
 def test_dominant_app() -> None:
     evts = [
-        _evt(1, _ts(_BASE, 0), "Chrome"),
-        _evt(2, _ts(_BASE, 1), "VSCode"),
-        _evt(3, _ts(_BASE, 2), "Chrome"),
-        _evt(4, _ts(_BASE, 3), "VSCode"),
-        _evt(5, _ts(_BASE, 4), "Chrome"),
+        _evt(1, _ts_s(_BASE, 0), "Chrome"),
+        _evt(2, _ts_s(_BASE, 10), "VSCode"),
+        _evt(3, _ts_s(_BASE, 20), "Chrome"),
+        _evt(4, _ts_s(_BASE, 30), "VSCode"),
+        _evt(5, _ts_s(_BASE, 40), "Chrome"),
     ]
     sessions = segmenter.segment_events(evts)
     assert len(sessions) == 1, f"Expected 1 session, got {len(sessions)}"
