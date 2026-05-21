@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import AutomationCard from "../components/AutomationCard";
+import ReplayControls from "../components/ReplayControls";
 import { sendToSidecar } from "../lib/sidecar";
 import { Automation } from "../lib/types";
 
@@ -59,6 +60,7 @@ export default function Automations() {
   const [runResults, setRunResults] = useState<
     Record<number, { status: string; stderr: string }>
   >({});
+  const [replayTarget, setReplayTarget] = useState<Automation | null>(null);
 
   const fetchData = useCallback(async () => {
     try {
@@ -81,17 +83,9 @@ export default function Automations() {
     fetchData();
   }, [fetchData]);
 
-  const handleRun = async (id: number) => {
-    const resp = (await sendToSidecar({
-      type: "run_automation",
-      automation_id: id,
-    })) as { status: string; stderr: string };
-    setRunResults((prev) => ({
-      ...prev,
-      [id]: { status: resp.status, stderr: resp.stderr },
-    }));
-    // Refresh to pick up updated run_count / last_run_at / last_run_status
-    await fetchData();
+  const handleRun = (id: number) => {
+    const automation = automations.find((a) => a.id === id);
+    if (automation) setReplayTarget(automation);
   };
 
   const handleDelete = async (id: number) => {
@@ -142,6 +136,14 @@ export default function Automations() {
         fontFamily: "system-ui, sans-serif",
       }}
     >
+      {replayTarget && (
+        <ReplayControls
+          automationId={replayTarget.id}
+          steps={[]}
+          onClose={() => setReplayTarget(null)}
+          onRunComplete={fetchData}
+        />
+      )}
       {/* Header */}
       <div style={{ marginBottom: 24 }}>
         <h1

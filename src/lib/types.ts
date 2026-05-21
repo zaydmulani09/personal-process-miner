@@ -32,6 +32,16 @@ export interface SummaryStats {
   weekly_wasted_human: string;
 }
 
+export interface Step {
+  type: 'click' | 'type' | 'scroll' | 'keypress';
+  x?: number;
+  y?: number;
+  description?: string;
+  value?: string;
+  key?: string;
+  timestamp?: number;
+}
+
 export interface Automation {
   id: number;
   workflow_id: number | null;
