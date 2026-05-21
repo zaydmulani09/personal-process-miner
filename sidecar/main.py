@@ -149,7 +149,7 @@ def _handle(msg: dict) -> dict | None:
     t = msg.get("type")
 
     if t == "ping":
-        return {"type": "pong"}
+        return {"type": "pong", "ok": True}
 
     if t == "status":
         return {"type": "status", "state": "running"}
@@ -607,6 +607,10 @@ def _handle(msg: dict) -> dict | None:
         steps = vision_replay.parse_steps_from_pyautogui(automation.get("script_body", ""))
         return {"type": "automation_steps", "steps": steps}
 
+    if t == "deactivate_vision":
+        db.set_setting("vision_backend", "")
+        return {"type": "ok"}
+
     if t == "check_vision":
         available = vision_ai.is_vision_available()
         backend, _, model = vision_ai._get_config()
@@ -718,10 +722,12 @@ def _handle(msg: dict) -> dict | None:
 
 
 def main() -> None:
+    print("PPM sidecar v1.0.0 starting...", file=sys.stderr, flush=True)
     logging.info("Sidecar started (pid=%d)", os.getpid())
     t = threading.Thread(target=_start_http_server, daemon=True, name="http-server")
     t.start()
     logging.info("HTTP server started on port %d", _HTTP_PORT)
+    print("PPM sidecar ready.", file=sys.stderr, flush=True)
     for raw in sys.stdin:
         raw = raw.strip()
         if not raw:

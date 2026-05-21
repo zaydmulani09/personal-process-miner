@@ -63,26 +63,45 @@ def is_vision_available() -> bool:
 def _classify_error(exc: Exception) -> str:
     exc_name = type(exc).__name__
     msg = str(exc).lower()
-    if any(x in exc_name for x in ["Authentication", "Unauthorized", "PermissionDenied"]):
+
+    # HTTP status code — most SDK exceptions expose .status_code
+    status = getattr(exc, "status_code", None) or getattr(exc, "http_status", None)
+    if status == 401 or status == 403:
         return "invalid_api_key"
-    if any(x in exc_name for x in ["RateLimit", "ResourceExhausted"]):
+    if status == 429:
         return "rate_limited"
+    if status == 400:
+        if any(x in msg for x in ["vision", "image", "multimodal", "not support"]):
+            return "vision_not_supported"
+
+    # Exception class name
+    if any(x in exc_name for x in ["Authentication", "Unauthorized", "PermissionDenied", "Forbidden"]):
+        return "invalid_api_key"
+    if any(x in exc_name for x in ["RateLimit", "ResourceExhausted", "TooManyRequests"]):
+        return "rate_limited"
+    if any(x in exc_name for x in ["Connection", "Timeout", "Network", "Socket"]):
+        return "network_error"
+
+    # Message content
     if any(x in msg for x in [
         "invalid api key", "incorrect api key", "authentication", "unauthorized",
         "api_key_invalid", "invalid_api_key", "permission denied", "401",
-        "api key", "credentials",
+        "api key", "credentials", "invalid key",
     ]):
         return "invalid_api_key"
-    if any(x in msg for x in ["rate limit", "rate_limit", "too many requests", "429", "quota"]):
+    if any(x in msg for x in ["rate limit", "rate_limit", "too many requests", "429", "quota", "ratelimit"]):
         return "rate_limited"
     if any(x in msg for x in [
         "connection", "timeout", "network", "unreachable",
         "connection refused", "failed to connect", "name resolution",
+        "socket", "eof", "reset by peer",
     ]):
         return "network_error"
-    if any(x in msg for x in ["not support", "vision not", "image not", "multimodal"]):
+    if any(x in msg for x in ["not support", "vision not", "image not", "multimodal", "does not support"]):
         return "vision_not_supported"
-    return "network_error"
+
+    raw = str(exc)[:80].replace("\n", " ")
+    return f"unknown_error: {raw}"
 
 
 def _call_backend(backend: str, key: str, model: str, screenshot_b64: str, instruction: str) -> str:
