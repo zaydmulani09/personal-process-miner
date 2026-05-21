@@ -4,6 +4,7 @@ import Dashboard from "./pages/Dashboard";
 import Onboarding from "./pages/Onboarding";
 import Settings from "./pages/Settings";
 import ShareInsights from "./pages/ShareInsights";
+import ScreenInspector from "./components/ScreenInspector";
 import { sendToSidecar } from "./lib/sidecar";
 
 type Page = "dashboard" | "automations" | "settings" | "share";
@@ -163,6 +164,7 @@ export default function App() {
           <ShareInsights />
         )}
       </main>
+      <ScreenInspector />
     </div>
   );
 }

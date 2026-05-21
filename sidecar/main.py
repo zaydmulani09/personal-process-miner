@@ -21,6 +21,8 @@ import playwright_gen
 import ranker
 import scheduler
 import segmenter
+import vision_capture
+import vision_ai
 
 _UNSAFE_PATTERNS = ["os.system", "subprocess", "shutil.rmtree", "__import__"]
 
@@ -416,6 +418,58 @@ def _handle(msg: dict) -> dict | None:
     if t == "list_scheduled":
         data = scheduler.list_scheduled()
         return {"type": "scheduled_list", "data": data}
+
+    if t == "check_vision":
+        available = vision_ai.is_vision_available()
+        backend, _, model = vision_ai._get_config()
+        return {
+            "type": "vision_status",
+            "available": available,
+            "backend": backend if available else None,
+            "model": model if available else None,
+        }
+
+    if t == "set_vision_config":
+        backend = msg.get("backend", "")
+        api_key = msg.get("api_key", "")
+        db.set_setting("vision_backend", backend)
+        db.set_setting("vision_api_key", api_key)
+        return {"type": "ok"}
+
+    if t == "take_screenshot":
+        data = vision_capture.take_screenshot()
+        return {"type": "screenshot", "data": data}
+
+    if t == "analyze_screen":
+        instruction = msg.get("instruction", "")
+        screenshot = vision_capture.take_screenshot()
+        if not screenshot:
+            return {"type": "error", "message": "screenshot failed"}
+        result = vision_ai.analyze_screen(screenshot, instruction)
+        return {"type": "analysis", "result": result}
+
+    if t == "find_element":
+        description = msg.get("description", "")
+        screenshot = vision_capture.take_screenshot()
+        if not screenshot:
+            return {"type": "error", "message": "screenshot failed"}
+        result = vision_ai.find_element(screenshot, description)
+        return {"type": "element_location", "result": result}
+
+    if t == "describe_screen":
+        screenshot = vision_capture.take_screenshot()
+        if not screenshot:
+            return {"type": "error", "message": "screenshot failed"}
+        result = vision_ai.describe_screen(screenshot)
+        return {"type": "screen_description", "result": result}
+
+    if t == "verify_action":
+        expected_state = msg.get("expected_state", "")
+        screenshot = vision_capture.take_screenshot()
+        if not screenshot:
+            return {"type": "error", "message": "screenshot failed"}
+        result = vision_ai.verify_action(screenshot, expected_state)
+        return {"type": "verification", "result": result}
 
     if t == "shutdown":
         logging.info("Shutdown received — stopping capture and exiting")
