@@ -40,7 +40,16 @@ jobs:
           python -m pip install pyinstaller
 
       - name: Build Python sidecar
-        run: python -m PyInstaller --onefile --name ppm-sidecar --distpath src-tauri/binaries --paths sidecar sidecar/main.py
+        run: |
+          python -m PyInstaller --onefile --name ppm-sidecar `
+            --distpath src-tauri/binaries `
+            --paths sidecar `
+            --hidden-import pynput.keyboard._win32 `
+            --hidden-import pynput.mouse._win32 `
+            --hidden-import pygetwindow._pygetwindow_win `
+            --collect-all pynput `
+            --collect-all pygetwindow `
+            sidecar/main.py
 
       - name: Rename sidecar binary for Tauri
         run: mv src-tauri/binaries/ppm-sidecar.exe src-tauri/binaries/ppm-sidecar-x86_64-pc-windows-msvc.exe
@@ -89,7 +98,15 @@ jobs:
           python -m pip install pyinstaller
 
       - name: Build Python sidecar
-        run: python -m PyInstaller --onefile --name ppm-sidecar --distpath src-tauri/binaries --paths sidecar sidecar/main.py
+        run: |
+          python -m PyInstaller --onefile --name ppm-sidecar \
+            --distpath src-tauri/binaries \
+            --paths sidecar \
+            --hidden-import pynput.keyboard._darwin \
+            --hidden-import pynput.mouse._darwin \
+            --collect-all pynput \
+            --collect-all pygetwindow \
+            sidecar/main.py
 
       - name: Rename sidecar binary for Tauri (macOS)
         run: mv src-tauri/binaries/ppm-sidecar src-tauri/binaries/ppm-sidecar-aarch64-apple-darwin

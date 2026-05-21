@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 
 import db
 
-_IDLE_GAP = timedelta(minutes=5)
+_IDLE_GAP = timedelta(seconds=30)
 _MAX_SESSION = timedelta(hours=4)
 
 
