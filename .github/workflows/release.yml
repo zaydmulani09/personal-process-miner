@@ -16,6 +16,11 @@ jobs:
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Install MSVC build tools
+        uses: ilammy/msvc-dev-cmd@v1
 
       - name: Set up Node 20
         uses: actions/setup-node@v4
