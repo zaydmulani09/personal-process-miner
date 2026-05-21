@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import AutomationCard from "../components/AutomationCard";
+import DOMCapture from "../components/DOMCapture";
 import ReplayControls from "../components/ReplayControls";
 import { sendToSidecar } from "../lib/sidecar";
 import { Automation } from "../lib/types";
@@ -144,6 +145,7 @@ export default function Automations() {
           onRunComplete={fetchData}
         />
       )}
+      <DOMCapture />
       {/* Header */}
       <div style={{ marginBottom: 24 }}>
         <h1

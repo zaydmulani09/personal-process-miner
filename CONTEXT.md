@@ -64,6 +64,7 @@ personal-process-miner/
 │   ├── test_nl_planner.py # NL planner unit tests (5 cases)
 │   ├── vision_replay.py   # vision-guided replay engine: replay_step, replay_session, describe_replay_plan
 │   ├── test_vision_replay.py  # vision replay unit tests (5 cases)
+│   ├── test_dom_capture.py    # DOM capture unit tests (6 cases)
 │   └── ranker.py          # workflow scoring, time-wasted stats, summary aggregation
 ├── src/
 │   ├── App.tsx
@@ -74,6 +75,7 @@ personal-process-miner/
 │   │   ├── sidecar.ts     # sendToSidecar IPC utility + SidecarError
 │   │   └── types.ts       # Workflow, Session, SummaryStats, Automation types
 │   ├── components/
+│   │   ├── DOMCapture.tsx         # collapsible panel: server status, download extension, session ID, generate script
 │   │   ├── NLBuilder.tsx          # full-page NL builder: instruction → AI plan → edit/refine → run/save
 │   │   ├── ReplayControls.tsx     # modal: vision/verify toggles, per-step status, result banner
 │   │   ├── ScreenInspector.tsx    # floating AI screen inspector panel (bottom-right)
@@ -141,11 +143,11 @@ personal-process-miner/
 | P19 | AI Vision backend with Claude/OpenAI/Groq, screen inspector UI, find element | complete |
 | P20 | Smart vision-guided replay engine with element finding, step verification, ReplayControls UI | complete |
 | P21 | Natural language automation builder with AI planning, plan review, refine flow | complete |
-| P22 | | pending |
+| P22 | Chrome extension for DOM event capture, local HTTP server (port 7834), selector-based Playwright gen, DOMCapture UI | complete |
 
 ## Test Count
 
-13 scripts total — 5 run on CI (headless-safe), 8 local-only (require OS GUI / running sidecar):
+14 scripts total — 5 run on CI (headless-safe), 9 local-only (require OS GUI / running sidecar):
 - `sidecar/test_ipc.py` — IPC smoke-test (34 assertions: prev 27 + get_summary_stats 6 keys, get_ranked_workflows type+list, per-workflow score+time_wasted_human)
 - `sidecar/test_capture.py` — capture + DB file smoke-test
 - `sidecar/test_db.py` — DB layer test on in-memory SQLite (all tables, all helpers; +5 privacy: migration 5, get/set_setting, get_all_settings, purge_all_data, purge_old_events zero-retention)
@@ -156,6 +158,7 @@ personal-process-miner/
 - `sidecar/test_playwright_gen.py` — playwright generator unit tests (6 cases: is_browser_event, extract_url_from_title, classify_event, group_keystrokes, no-browser-events script, full script structure)
 - `sidecar/test_llm_explainer.py` — LLM explainer unit tests (5 cases: backend empty, invalid Ollama URL, disabled explain_script, fence stripping, get/update automation by id — all offline)
 - `sidecar/test_scheduler.py` — scheduler unit tests (5 tests, 12 assertions: get_platform, schedule/unschedule Windows, list_scheduled, is_script_safe)
+- `sidecar/test_dom_capture.py` — DOM capture unit tests (6 cases: dom_events table, insert+query, HTTP /status, POST /dom-events, generate_from_dom_events empty + 2 clicks)
 - `sidecar/seed.py` — not a test, but verifies seeder runs clean (59 rows)
 
 CI runs: test_db, test_segmenter, test_fingerprinter, test_ranker, test_llm_explainer
@@ -205,6 +208,13 @@ Local-only: test_ipc (requires seed), test_capture, test_macro_recorder, test_pl
 - **NLBuilder disabled gracefully when vision unconfigured**: Build button disabled, yellow banner shown with link to Settings. `parse_instruction` returns `{"ok": False}` immediately when `is_vision_available()` is False.
 - **NL automations stored as `script_type="nl_builder"`**: Steps stored as JSON in `script_body`. No schema migration needed — reuses existing `automations` table.
 - **`"✨ Build"` nav item** in App.tsx between Automations and Settings. Renders `NLBuilder` page component.
+- **Chrome extension for DOM capture (P22)**: 5-file MV3 extension (`manifest.json`, `content.js`, `background.js`, `popup.html/js`, `icon.png`). content.js generates CSS selectors preferring `#id`, `tag.class`, nth-child path ≤4 levels. background.js buffers up to 500 events. popup.js sends events to `http://localhost:7834/dom-events`.
+- **HTTP server on port 7834**: daemon thread in `main.py`, `http.server.HTTPServer` + `_HTTPHandler`. GET `/status` → `{"ok":true,"version":"1.0.0"}`. POST `/dom-events` → calls `db.insert_dom_events`, returns `{"ok":true,"count":N}`. CORS headers on every response.
+- **`dom_events` table (migration 6)**: session_id/type/url/timestamp/selector/element_tag/element_id/element_class/element_text/value/key/x/y/created_at. `insert_dom_events(events)` bulk-inserts. `get_dom_events_by_session(session_id)` returns all if `session_id` empty, else filters by it.
+- **`generate_from_dom_events` in playwright_gen.py**: builds async playwright script from dom_events. click→`locator.click()`, input→`locator.fill()`, keydown Enter/Tab→`keyboard.press()`, submit→`locator.click()`. First URL becomes `await page.goto(...)`.
+- **`get_extension_zip` IPC handler**: walks `chrome-extension/` dir, builds in-memory zip, returns base64. DOMCapture.tsx decodes + triggers browser download of `ppm-chrome-extension.zip`.
+- **`DOMCapture.tsx` collapsible panel**: server health check via `fetch` to `localhost:7834/status` (2s timeout). Download Extension, session ID input, Generate Script button, script output pre-block.
+- **`DOMCapture` added to top of Automations page**: imported and rendered before the header/stats section.
 - **InsightsCard uses hardcoded colors, not CSS vars**: card must look identical regardless of OS dark/light mode since it's designed for screenshotting. Width fixed at 600px.
 - **No html2canvas**: Tauri WebView doesn't expose clipboard image write without a custom Rust command. "📋 Copy as Image" button shows the OS screenshot tip instead (Win+Shift+S / Cmd+Shift+4). Deferred to P18+ if a proper clipboard image API is needed.
 - **GitHub URL hardcoded**: `github.com/zaydmulani09/personal-process-miner` read from `git remote get-url origin`.

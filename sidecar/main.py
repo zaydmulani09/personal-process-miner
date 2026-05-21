@@ -1,9 +1,14 @@
-import os
+import base64
+import io
 import json
 import logging
+import os
 import subprocess
 import sys
 import tempfile
+import threading
+import zipfile
+from http.server import BaseHTTPRequestHandler, HTTPServer
 
 _log_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sidecar.log")
 logging.basicConfig(
@@ -27,6 +32,60 @@ import vision_replay
 import nl_planner
 
 _UNSAFE_PATTERNS = ["os.system", "subprocess", "shutil.rmtree", "__import__"]
+
+_HTTP_PORT = 7834
+_CHROME_EXT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "chrome-extension")
+
+
+class _HTTPHandler(BaseHTTPRequestHandler):
+    def log_message(self, fmt, *args):
+        logging.debug("HTTP %s", fmt % args)
+
+    def _send_json(self, code: int, payload: dict) -> None:
+        body = json.dumps(payload).encode()
+        self.send_response(code)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def do_OPTIONS(self):
+        self.send_response(204)
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.end_headers()
+
+    def do_GET(self):
+        if self.path == "/status":
+            self._send_json(200, {"ok": True, "version": "1.0.0"})
+        else:
+            self._send_json(404, {"error": "not found"})
+
+    def do_POST(self):
+        if self.path == "/dom-events":
+            try:
+                length = int(self.headers.get("Content-Length", 0))
+                body = self.rfile.read(length)
+                payload = json.loads(body)
+                events = payload.get("events", [])
+                if events:
+                    db.insert_dom_events(events)
+                self._send_json(200, {"ok": True, "count": len(events)})
+            except Exception as exc:
+                logging.exception("POST /dom-events error")
+                self._send_json(500, {"error": str(exc)})
+        else:
+            self._send_json(404, {"error": "not found"})
+
+
+def _start_http_server() -> None:
+    try:
+        server = HTTPServer(("127.0.0.1", _HTTP_PORT), _HTTPHandler)
+        server.serve_forever()
+    except Exception:
+        logging.exception("HTTP server failed to start on port %d", _HTTP_PORT)
 
 
 def is_script_safe(script_body: str) -> bool:
@@ -536,6 +595,27 @@ def _handle(msg: dict) -> dict | None:
         result = vision_ai.verify_action(screenshot, expected_state)
         return {"type": "verification", "result": result}
 
+    if t == "generate_dom_playwright":
+        session_id = msg.get("session_id", "")
+        script = playwright_gen.generate_from_dom_events(session_id)
+        return {"type": "dom_playwright_script", "script": script}
+
+    if t == "get_extension_zip":
+        try:
+            buf = io.BytesIO()
+            ext_dir = os.path.abspath(_CHROME_EXT_DIR)
+            with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+                for root, _dirs, files in os.walk(ext_dir):
+                    for fname in files:
+                        full = os.path.join(root, fname)
+                        arcname = os.path.relpath(full, ext_dir)
+                        zf.write(full, arcname)
+            data = base64.b64encode(buf.getvalue()).decode()
+            return {"type": "extension_zip", "data": data}
+        except Exception as exc:
+            logging.exception("get_extension_zip error")
+            return {"type": "error", "message": str(exc)}
+
     if t == "shutdown":
         logging.info("Shutdown received — stopping capture and exiting")
         capture.stop_capture()
@@ -547,6 +627,9 @@ def _handle(msg: dict) -> dict | None:
 
 def main() -> None:
     logging.info("Sidecar started (pid=%d)", os.getpid())
+    t = threading.Thread(target=_start_http_server, daemon=True, name="http-server")
+    t.start()
+    logging.info("HTTP server started on port %d", _HTTP_PORT)
     for raw in sys.stdin:
         raw = raw.strip()
         if not raw:

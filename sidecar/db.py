@@ -88,6 +88,28 @@ MIGRATIONS: list[tuple[int, str]] = [
         )
         """,
     ),
+    (
+        6,
+        """
+        CREATE TABLE IF NOT EXISTS dom_events (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id    TEXT,
+            type          TEXT,
+            url           TEXT,
+            timestamp     REAL,
+            selector      TEXT,
+            element_tag   TEXT,
+            element_id    TEXT,
+            element_class TEXT,
+            element_text  TEXT,
+            value         TEXT,
+            key           TEXT,
+            x             REAL,
+            y             REAL,
+            created_at    REAL DEFAULT (unixepoch('now'))
+        )
+        """,
+    ),
 ]
 
 _DEFAULT_SETTINGS: dict[str, str] = {
@@ -529,3 +551,51 @@ def purge_all_data() -> dict:
             counts[table] = n
         conn.commit()
     return counts
+
+
+# ---------------------------------------------------------------------------
+# DOM Events
+# ---------------------------------------------------------------------------
+
+
+def insert_dom_events(events: list) -> None:
+    conn = _get_conn()
+    with _lock:
+        for e in events:
+            conn.execute(
+                "INSERT INTO dom_events "
+                "(session_id, type, url, timestamp, selector, element_tag, element_id, "
+                " element_class, element_text, value, key, x, y) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    e.get("session_id"),
+                    e.get("type"),
+                    e.get("url"),
+                    e.get("timestamp"),
+                    e.get("selector"),
+                    e.get("element_tag"),
+                    e.get("element_id"),
+                    e.get("element_class"),
+                    e.get("element_text"),
+                    e.get("value"),
+                    e.get("key"),
+                    e.get("x"),
+                    e.get("y"),
+                ),
+            )
+        conn.commit()
+
+
+def get_dom_events_by_session(session_id: str) -> list[dict]:
+    conn = _get_conn()
+    with _lock:
+        if session_id:
+            rows = conn.execute(
+                "SELECT * FROM dom_events WHERE session_id = ? ORDER BY timestamp",
+                (session_id,),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM dom_events ORDER BY timestamp DESC LIMIT 500"
+            ).fetchall()
+    return [dict(row) for row in rows]
