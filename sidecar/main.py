@@ -24,6 +24,7 @@ import segmenter
 import vision_capture
 import vision_ai
 import vision_replay
+import nl_planner
 
 _UNSAFE_PATTERNS = ["os.system", "subprocess", "shutil.rmtree", "__import__"]
 
@@ -419,6 +420,35 @@ def _handle(msg: dict) -> dict | None:
     if t == "list_scheduled":
         data = scheduler.list_scheduled()
         return {"type": "scheduled_list", "data": data}
+
+    if t == "parse_nl_instruction":
+        instruction = msg.get("instruction", "")
+        if not instruction:
+            return {"type": "error", "message": "instruction must be non-empty"}
+        result = nl_planner.parse_instruction(instruction)
+        if not result.get("ok"):
+            return {"type": "error", "message": result.get("error", "parse failed")}
+        return {"type": "nl_plan", "steps": result["steps"], "summary": result.get("summary", "")}
+
+    if t == "refine_nl_plan":
+        instruction = msg.get("instruction", "")
+        steps = msg.get("steps", [])
+        feedback = msg.get("feedback", "")
+        if not isinstance(steps, list):
+            return {"type": "error", "message": "steps must be a list"}
+        result = nl_planner.refine_plan(instruction, steps, feedback)
+        if not result.get("ok"):
+            return {"type": "error", "message": result.get("error", "refine failed")}
+        return {"type": "nl_plan", "steps": result["steps"], "summary": result.get("summary", "")}
+
+    if t == "save_nl_automation":
+        instruction = msg.get("instruction", "")
+        steps = msg.get("steps", [])
+        summary = msg.get("summary", "")
+        if not isinstance(steps, list):
+            return {"type": "error", "message": "steps must be a list"}
+        automation_id = nl_planner.save_nl_automation(instruction, steps, summary)
+        return {"type": "ok", "id": automation_id}
 
     if t == "replay_session":
         steps = msg.get("steps", [])

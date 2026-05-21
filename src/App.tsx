@@ -5,9 +5,10 @@ import Onboarding from "./pages/Onboarding";
 import Settings from "./pages/Settings";
 import ShareInsights from "./pages/ShareInsights";
 import ScreenInspector from "./components/ScreenInspector";
+import NLBuilder from "./components/NLBuilder";
 import { sendToSidecar } from "./lib/sidecar";
 
-type Page = "dashboard" | "automations" | "settings" | "share";
+type Page = "dashboard" | "automations" | "build" | "settings" | "share";
 
 function NavItem({
   label,
@@ -136,6 +137,11 @@ export default function App() {
           onClick={() => setPage("automations")}
         />
         <NavItem
+          label="✨ Build"
+          active={page === "build"}
+          onClick={() => setPage("build")}
+        />
+        <NavItem
           label="⚙ Settings"
           active={page === "settings"}
           onClick={() => setPage("settings")}
@@ -158,6 +164,8 @@ export default function App() {
           <Dashboard />
         ) : page === "automations" ? (
           <Automations />
+        ) : page === "build" ? (
+          <NLBuilder onNavigate={(p) => setPage(p as Page)} />
         ) : page === "settings" ? (
           <Settings onNavigate={(p) => setPage(p as Page)} />
         ) : (
