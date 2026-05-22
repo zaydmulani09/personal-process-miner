@@ -175,10 +175,48 @@ def run_migrations(conn: sqlite3.Connection) -> None:
         )
     conn.commit()
 
+    # Migration 7: copy vision_api_key_{backend} -> ai_api_key_{backend} and vision_backend -> ai_backend
+    _run_migration_7(conn, now)
+
 
 # ---------------------------------------------------------------------------
 # Connection
 # ---------------------------------------------------------------------------
+
+
+def _run_migration_7(conn: sqlite3.Connection, now: str) -> None:
+    """Migration 7: copy vision_* keys to ai_* keys if new keys not already set."""
+    backends = ["claude", "openai", "groq", "gemini", "grok"]
+    for backend in backends:
+        old_key = f"vision_api_key_{backend}"
+        new_key = f"ai_api_key_{backend}"
+        # Check if old key exists and new key is not set
+        old_row = conn.execute(
+            "SELECT value FROM privacy_settings WHERE key = ?", (old_key,)
+        ).fetchone()
+        new_row = conn.execute(
+            "SELECT value FROM privacy_settings WHERE key = ?", (new_key,)
+        ).fetchone()
+        if old_row and old_row[0] and (not new_row or not new_row[0]):
+            conn.execute(
+                "INSERT INTO privacy_settings (key, value, updated_at) VALUES (?, ?, ?)"
+                " ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
+                (new_key, old_row[0], now),
+            )
+    # copy vision_backend -> ai_backend if ai_backend not set
+    old_backend = conn.execute(
+        "SELECT value FROM privacy_settings WHERE key = 'vision_backend'"
+    ).fetchone()
+    new_backend = conn.execute(
+        "SELECT value FROM privacy_settings WHERE key = 'ai_backend'"
+    ).fetchone()
+    if old_backend and old_backend[0] and (not new_backend or not new_backend[0]):
+        conn.execute(
+            "INSERT INTO privacy_settings (key, value, updated_at) VALUES (?, ?, ?)"
+            " ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
+            ("ai_backend", old_backend[0], now),
+        )
+    conn.commit()
 
 
 def _get_conn() -> sqlite3.Connection:

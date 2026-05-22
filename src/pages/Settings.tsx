@@ -38,11 +38,11 @@ interface Props {
 type ProviderKey = "claude" | "openai" | "groq" | "gemini" | "grok";
 
 const PROVIDERS: { id: ProviderKey; emoji: string; name: string; desc: string; placeholder: string; link: string }[] = [
-  { id: "claude", emoji: "🟠", name: "Claude", desc: "Best quality, Anthropic", placeholder: "sk-ant-...", link: "https://console.anthropic.com" },
-  { id: "openai", emoji: "🟢", name: "OpenAI", desc: "GPT-4o vision", placeholder: "sk-...", link: "https://platform.openai.com/api-keys" },
-  { id: "groq", emoji: "⚡", name: "Groq", desc: "Fast & free tier", placeholder: "gsk_...", link: "https://console.groq.com" },
-  { id: "gemini", emoji: "🔵", name: "Gemini", desc: "Google Gemini Flash", placeholder: "AIza...", link: "https://aistudio.google.com/apikey" },
-  { id: "grok", emoji: "⬛", name: "Grok", desc: "xAI Grok vision", placeholder: "xai-...", link: "https://console.x.ai" },
+  { id: "claude", emoji: "🟠", name: "Claude", desc: "Haiku — fast and cheap", placeholder: "sk-ant-...", link: "https://console.anthropic.com" },
+  { id: "openai", emoji: "🟢", name: "OpenAI", desc: "GPT-4o Mini", placeholder: "sk-...", link: "https://platform.openai.com/api-keys" },
+  { id: "groq", emoji: "⚡", name: "Groq", desc: "Fast & free — recommended", placeholder: "gsk_...", link: "https://console.groq.com" },
+  { id: "gemini", emoji: "🔵", name: "Gemini", desc: "Gemini Flash — free tier", placeholder: "AIza...", link: "https://aistudio.google.com/apikey" },
+  { id: "grok", emoji: "⬛", name: "Grok", desc: "Grok Mini", placeholder: "xai-...", link: "https://console.x.ai" },
 ];
 
 const EMPTY_PROVIDER_MAP = (): Record<ProviderKey, string> => ({
@@ -88,7 +88,7 @@ export default function Settings({ onNavigate }: Props) {
     Promise.all([
       sendToSidecar({ type: "get_settings" }),
       sendToSidecar({ type: "get_blocklist" }),
-      sendToSidecar({ type: "check_vision" }),
+      sendToSidecar({ type: "check_ai" }),
     ]).then(([sResp, bResp, vResp]) => {
       const s = (sResp as { data: Settings }).data ?? {};
       setSettings(s);
@@ -99,11 +99,11 @@ export default function Settings({ onNavigate }: Props) {
         setActiveModel(vs.model ?? null);
       }
       setProviderKeys({
-        claude: s["vision_api_key_claude"] ?? "",
-        openai: s["vision_api_key_openai"] ?? "",
-        groq: s["vision_api_key_groq"] ?? "",
-        gemini: s["vision_api_key_gemini"] ?? "",
-        grok: s["vision_api_key_grok"] ?? "",
+        claude: s["ai_api_key_claude"] ?? "",
+        openai: s["ai_api_key_openai"] ?? "",
+        groq: s["ai_api_key_groq"] ?? "",
+        gemini: s["ai_api_key_gemini"] ?? "",
+        grok: s["ai_api_key_grok"] ?? "",
       });
       setLoading(false);
     }).catch(() => setLoading(false));
@@ -113,7 +113,7 @@ export default function Settings({ onNavigate }: Props) {
     setTesting(prev => ({ ...prev, [providerId]: true }));
     try {
       const resp = await sendToSidecar({
-        type: "test_vision_connection",
+        type: "test_ai_connection",
         backend: providerId,
         api_key: providerKeys[providerId],
       }) as { type: string; ok: boolean; error: string | null; model: string | null };
@@ -132,11 +132,11 @@ export default function Settings({ onNavigate }: Props) {
     setSettingActive(providerId);
     try {
       await sendToSidecar({
-        type: "set_vision_config",
+        type: "set_ai_config",
         backend: providerId,
         api_key: providerKeys[providerId],
       });
-      const resp = await sendToSidecar({ type: "check_vision" }) as { available: boolean; backend: string | null; model: string | null };
+      const resp = await sendToSidecar({ type: "check_ai" }) as { available: boolean; backend: string | null; model: string | null };
       if (resp.available && resp.backend) {
         setActiveProvider(resp.backend as ProviderKey);
         setActiveModel(resp.model ?? null);
@@ -154,7 +154,7 @@ export default function Settings({ onNavigate }: Props) {
   const deactivateVision = async () => {
     setDeactivating(true);
     try {
-      await sendToSidecar({ type: "deactivate_vision" });
+      await sendToSidecar({ type: "deactivate_ai" });
       setActiveProvider(null);
       setActiveModel(null);
     } catch {
@@ -435,11 +435,11 @@ export default function Settings({ onNavigate }: Props) {
         )}
       </div>
 
-      {/* AI Vision */}
+      {/* AI Assistant */}
       <div style={sectionStyle}>
-        <div style={labelStyle}>AI Vision</div>
+        <div style={labelStyle}>AI Assistant</div>
         <div style={subStyle}>
-          Let AI see your screen to enable smart automations that work even when layouts change
+          Powers natural language automation. No camera or screenshots needed — AI reads your screen's accessibility tree as text.
         </div>
 
         {/* Active provider status */}
@@ -545,7 +545,7 @@ export default function Settings({ onNavigate }: Props) {
         </div>
 
         <p style={{ fontSize: 12, color: "#64748b", margin: 0, lineHeight: 1.6 }}>
-          API keys stored locally in SQLite. Screenshots only sent when you trigger an action — never during passive capture.
+          API keys stored locally in SQLite. AI reads the accessibility tree — no screenshots, no screen capture.
         </p>
       </div>
 

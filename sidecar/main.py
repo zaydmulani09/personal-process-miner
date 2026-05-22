@@ -31,6 +31,8 @@ import vision_capture
 import vision_ai
 import vision_replay
 import nl_planner
+import accessibility
+import text_ai
 
 _UNSAFE_PATTERNS = ["os.system", "subprocess", "shutil.rmtree", "__import__"]
 
@@ -573,11 +575,11 @@ def _handle(msg: dict) -> dict | None:
         steps, err = _validate(msg.get("steps", []), list, max_len=500)
         if err:
             return {"type": "error", "message": f"steps: {err}"}
-        use_vision = msg.get("use_vision", True)
+        use_ai = msg.get("use_ai", msg.get("use_vision", True))
         verify_each = msg.get("verify_each", False)
         if not isinstance(steps, list):
             return {"type": "error", "message": "steps must be a list"}
-        result = vision_replay.replay_session(steps, use_vision=use_vision, verify_each=verify_each)
+        result = vision_replay.replay_session(steps, use_ai=use_ai, verify_each=verify_each)
         return {"type": "replay_result", "result": result}
 
     if t == "describe_replay_plan":
@@ -591,10 +593,10 @@ def _handle(msg: dict) -> dict | None:
 
     if t == "replay_step":
         step = msg.get("step", {})
-        use_vision = msg.get("use_vision", True)
+        use_ai = msg.get("use_ai", msg.get("use_vision", True))
         if not isinstance(step, dict):
             return {"type": "error", "message": "step must be a dict"}
-        result = vision_replay.replay_step(step, use_vision=use_vision)
+        result = vision_replay.replay_step(step, use_ai=use_ai)
         return {"type": "step_result", "result": result}
 
     if t == "get_automation_steps":
@@ -607,6 +609,83 @@ def _handle(msg: dict) -> dict | None:
         steps = vision_replay.parse_steps_from_pyautogui(automation.get("script_body", ""))
         return {"type": "automation_steps", "steps": steps}
 
+    if t == "deactivate_ai":
+        db.set_setting("ai_backend", "")
+        return {"type": "ok"}
+
+    if t == "check_ai":
+        available = text_ai.is_ai_available()
+        backend, _ = text_ai._get_config()
+        return {
+            "type": "ai_status",
+            "available": available,
+            "backend": backend if available else None,
+            "backends": text_ai.get_available_backends(),
+        }
+
+    if t == "set_ai_config":
+        backend, err = _validate(msg.get("backend", ""), str, required=False)
+        if err:
+            backend = ""
+        api_key, err = _validate(msg.get("api_key", ""), str, required=False)
+        if err:
+            api_key = ""
+        db.set_setting("ai_backend", backend or "")
+        if backend:
+            db.set_setting(f"ai_api_key_{backend}", api_key or "")
+        return {"type": "ok"}
+
+    if t == "test_ai_connection":
+        backend, err = _validate(msg.get("backend", ""), str)
+        if err:
+            return {"type": "error", "message": f"backend: {err}"}
+        api_key, err = _validate(msg.get("api_key", ""), str, required=False)
+        if err:
+            api_key = ""
+        result = text_ai.test_connection(backend, api_key or "")
+        return {
+            "type": "connection_test",
+            "ok": result.get("ok", False),
+            "error": result.get("error"),
+            "model": result.get("model"),
+        }
+
+    if t == "get_screen_tree":
+        tree = accessibility.get_screen_tree()
+        return {"type": "screen_tree", "tree": tree}
+
+    if t == "get_tree_as_text":
+        tree = accessibility.get_screen_tree()
+        text = accessibility.tree_to_text(tree)
+        return {"type": "tree_text", "text": text}
+
+    if t == "plan_automation":
+        instruction, err = _validate(msg.get("instruction", ""), str)
+        if err:
+            return {"type": "error", "message": f"instruction: {err}"}
+        tree = accessibility.get_screen_tree()
+        tree_text_val = accessibility.tree_to_text(tree)
+        result = text_ai.plan_automation(instruction, tree_text_val)
+        if not result.get("ok"):
+            return {"type": "error", "message": result.get("error", "plan failed")}
+        return {
+            "type": "automation_plan",
+            "steps": result.get("steps", []),
+            "summary": result.get("summary", ""),
+        }
+
+    if t == "answer_screen_question":
+        question, err = _validate(msg.get("question", ""), str)
+        if err:
+            return {"type": "error", "message": f"question: {err}"}
+        tree_text_val = msg.get("tree_text", "")
+        if not tree_text_val:
+            tree = accessibility.get_screen_tree()
+            tree_text_val = accessibility.tree_to_text(tree)
+        answer = text_ai.answer_screen_question(question, tree_text_val)
+        return {"type": "answer", "text": answer}
+
+    # Legacy vision handlers kept for backwards compatibility
     if t == "deactivate_vision":
         db.set_setting("vision_backend", "")
         return {"type": "ok"}
@@ -641,54 +720,13 @@ def _handle(msg: dict) -> dict | None:
         api_key, err = _validate(msg.get("api_key", ""), str, required=False)
         if err:
             api_key = ""
-        result = vision_ai.test_connection(backend, api_key)
+        result = vision_ai.test_connection(backend, api_key or "")
         return {
             "type": "connection_test",
             "ok": result.get("ok", False),
             "error": result.get("error"),
             "model": result.get("model"),
         }
-
-    if t == "take_screenshot":
-        data = vision_capture.take_screenshot()
-        return {"type": "screenshot", "data": data}
-
-    if t == "analyze_screen":
-        instruction, err = _validate(msg.get("instruction", ""), str)
-        if err:
-            return {"type": "error", "message": f"instruction: {err}"}
-        screenshot = vision_capture.take_screenshot()
-        if not screenshot:
-            return {"type": "error", "message": "screenshot failed"}
-        result = vision_ai.analyze_screen(screenshot, instruction)
-        return {"type": "analysis", "result": result}
-
-    if t == "find_element":
-        description, err = _validate(msg.get("description", ""), str)
-        if err:
-            return {"type": "error", "message": f"description: {err}"}
-        screenshot = vision_capture.take_screenshot()
-        if not screenshot:
-            return {"type": "error", "message": "screenshot failed"}
-        result = vision_ai.find_element(screenshot, description)
-        return {"type": "element_location", "result": result}
-
-    if t == "describe_screen":
-        screenshot = vision_capture.take_screenshot()
-        if not screenshot:
-            return {"type": "error", "message": "screenshot failed"}
-        result = vision_ai.describe_screen(screenshot)
-        return {"type": "screen_description", "result": result}
-
-    if t == "verify_action":
-        expected_state, err = _validate(msg.get("expected_state", ""), str)
-        if err:
-            return {"type": "error", "message": f"expected_state: {err}"}
-        screenshot = vision_capture.take_screenshot()
-        if not screenshot:
-            return {"type": "error", "message": "screenshot failed"}
-        result = vision_ai.verify_action(screenshot, expected_state)
-        return {"type": "verification", "result": result}
 
     if t == "generate_dom_playwright":
         session_id, _ = _validate(msg.get("session_id", ""), str, required=False)

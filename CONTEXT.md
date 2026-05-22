@@ -59,11 +59,14 @@ personal-process-miner/
 │   ├── test_segmenter.py  # segmenter unit tests
 │   ├── test_vision.py     # vision module unit tests (5 cases)
 │   ├── vision_capture.py  # mss screenshot capture, base64 encode, screen size
-│   ├── vision_ai.py       # AI vision: Claude/OpenAI/Groq backends, analyze/find/describe/verify
-│   ├── nl_planner.py      # NL automation planner: parse_instruction, refine_plan, save_nl_automation
+│   ├── vision_ai.py       # AI vision: Claude/OpenAI/Groq backends, analyze/find/describe/verify (legacy, kept for backward compat)
+│   ├── accessibility.py   # Accessibility tree reader (pywinauto/UIA): get_screen_tree, find_element_by_description, tree_to_text
+│   ├── text_ai.py         # Text-only AI: plan_automation, answer_screen_question, test_connection (5 backends, no screenshots)
+│   ├── nl_planner.py      # NL automation planner: parse_instruction, refine_plan, save_nl_automation (uses text_ai + accessibility)
 │   ├── test_nl_planner.py # NL planner unit tests (5 cases)
-│   ├── vision_replay.py   # vision-guided replay engine: replay_step, replay_session, describe_replay_plan
-│   ├── test_vision_replay.py  # vision replay unit tests (5 cases)
+│   ├── test_accessibility.py # Accessibility + text AI unit tests (6 cases)
+│   ├── vision_replay.py   # accessibility-guided replay engine: replay_step, replay_session, describe_replay_plan (use_ai param)
+│   ├── test_vision_replay.py  # vision replay unit tests (5 cases, updated for use_ai API)
 │   ├── test_dom_capture.py    # DOM capture unit tests (6 cases)
 │   └── ranker.py          # workflow scoring, time-wasted stats, summary aggregation
 ├── src/
@@ -150,10 +153,11 @@ personal-process-miner/
 | P24 | Universal AI provider support — claude, openai, groq, gemini, grok; test connection UI; per-provider key storage | complete |
 | P25 | Pre-launch security audit — localhost binding confirmed, CORS hardened, input validation, rate limiting, privacy policy, terms | complete |
 | P26 | Fix: sidecar health indicator, deactivate provider, granular error messages all backends | complete |
+| P26b | Accessibility Tree Automation Engine: replace vision/screenshot approach with accessibility tree + text-only AI; Groq recommended as free provider; migration 7 copies vision keys | complete |
 
 ## Test Count
 
-15 scripts total — 6 run on CI (headless-safe), 9 local-only (require OS GUI / running sidecar):
+16 scripts total — 7 run on CI (headless-safe), 9 local-only (require OS GUI / running sidecar):
 - `sidecar/test_ipc.py` — IPC smoke-test (34 assertions: prev 27 + get_summary_stats 6 keys, get_ranked_workflows type+list, per-workflow score+time_wasted_human)
 - `sidecar/test_capture.py` — capture + DB file smoke-test
 - `sidecar/test_db.py` — DB layer test on in-memory SQLite (all tables incl dom_events, all helpers; +5 privacy: migration 6, get/set_setting, get_all_settings, purge_all_data, purge_old_events zero-retention)
@@ -168,7 +172,7 @@ personal-process-miner/
 - `sidecar/test_providers.py` — provider tests (6 cases: get_available_backends, is_vision_available no-backend, test_connection invalid key all 5 backends, set_vision_config namespaced key, switching backend updates check_vision, all 5 error types handled)
 - `sidecar/seed.py` — not a test, but verifies seeder runs clean (59 rows)
 
-CI runs: test_db, test_segmenter, test_fingerprinter, test_ranker, test_llm_explainer, test_providers (CI-safe, all offline)
+CI runs: test_db, test_segmenter, test_fingerprinter, test_ranker, test_llm_explainer, test_providers, test_accessibility (CI-safe, all offline)
 Local-only: test_ipc (requires seed), test_capture, test_macro_recorder, test_playwright_gen, test_scheduler, test_vision (requires display), test_vision_replay (requires display + pyautogui), test_nl_planner (all offline, passes CI-safe too)
 
 ## Known Issues
@@ -236,6 +240,9 @@ Local-only: test_ipc (requires seed), test_capture, test_macro_recorder, test_pl
 - **Granular error classification (P26)**: `_classify_error` in `vision_ai.py` now checks `exc.status_code` (401→invalid_api_key, 429→rate_limited, 400→vision_not_supported), exception class names (`Connection*`→network_error), and falls back to `f"unknown_error: {str(exc)[:80]}"` instead of always returning `network_error`.
 - **Settings sidecar health indicator (P26)**: Green/red dot at top of Settings page. Pings sidecar on mount with 3s timeout. Shows "Sidecar running" or "Sidecar not running — try restarting the app".
 - **Deactivate button in AI Vision section (P26)**: Shown next to active provider status when provider is active. Calls `deactivate_vision` IPC → clears active highlight on all cards → saved keys untouched.
+- **P26b accessibility tree engine**: Vision/screenshot approach fully replaced with accessibility tree + text AI. `accessibility.py` uses pywinauto UIA backend to walk the foreground window element tree. `text_ai.py` provides text-only AI with 5 backends (groq recommended as free). Models: groq=moonshotai/kimi-k2-instruct, claude=claude-haiku-4-5-20251001, openai=gpt-4o-mini, gemini=gemini-2.0-flash, grok=grok-3-mini. Settings page renamed "AI Vision" → "AI Assistant", DB keys changed from `vision_*` to `ai_*`. Migration 7 copies existing `vision_api_key_{backend}` → `ai_api_key_{backend}` on first run.
+- **Migration 7 is a runtime migration** (not in MIGRATIONS list): runs as `_run_migration_7` called from `run_migrations` after default settings seed. Safe to re-run (INSERT OR IGNORE / ON CONFLICT DO UPDATE with existing value check).
+- **AccessibilityInspector replaces ScreenInspector**: New component calls `get_tree_as_text` IPC + `answer_screen_question`. No screenshot, no camera. Old `ScreenInspector.tsx` kept in repo for reference but no longer used in `App.tsx`.
 - **InsightsCard uses hardcoded colors, not CSS vars**: card must look identical regardless of OS dark/light mode since it's designed for screenshotting. Width fixed at 600px.
 - **No html2canvas**: Tauri WebView doesn't expose clipboard image write without a custom Rust command. "📋 Copy as Image" button shows the OS screenshot tip instead (Win+Shift+S / Cmd+Shift+4). Deferred to P18+ if a proper clipboard image API is needed.
 - **GitHub URL hardcoded**: `github.com/zaydmulani09/personal-process-miner` read from `git remote get-url origin`.

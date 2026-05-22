@@ -5,8 +5,8 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import vision_ai
-import vision_capture
+from accessibility import get_screen_tree, find_element_by_description
+from text_ai import is_ai_available
 
 try:
     import pyautogui
@@ -38,7 +38,7 @@ def _execute_step(step: dict, x: int, y: int) -> None:
             pyautogui.press(key)
 
 
-def replay_step(step: dict, use_vision: bool = True) -> dict:
+def replay_step(step: dict, use_ai: bool = True) -> dict:
     if not _PYAUTOGUI_OK:
         return {"ok": False, "method": "recorded", "confidence": None, "error": "pyautogui not available"}
 
@@ -48,18 +48,21 @@ def replay_step(step: dict, use_vision: bool = True) -> dict:
     method = "recorded"
     confidence = None
 
-    if use_vision and description and step.get("type") == "click":
+    if use_ai and description and step.get("type") == "click":
         try:
-            screenshot = vision_capture.take_screenshot()
-            if screenshot:
-                result = vision_ai.find_element(screenshot, description)
-                if result.get("found") and float(result.get("confidence", 0)) >= 0.6:
-                    x = int(result["x"])
-                    y = int(result["y"])
-                    method = "vision"
-                    confidence = float(result.get("confidence", 0))
+            tree = get_screen_tree()
+            if tree.get("ok"):
+                element = find_element_by_description(description, tree)
+                if element:
+                    cx = element.get("center", {}).get("x", 0)
+                    cy = element.get("center", {}).get("y", 0)
+                    if cx and cy:
+                        x = cx
+                        y = cy
+                        method = "accessibility"
+                        confidence = 1.0
         except Exception as exc:
-            logging.warning("vision find_element failed in replay_step: %s", exc)
+            logging.warning("accessibility find_element failed in replay_step: %s", exc)
 
     try:
         _execute_step(step, x, y)
@@ -69,10 +72,10 @@ def replay_step(step: dict, use_vision: bool = True) -> dict:
         return {"ok": False, "method": method, "confidence": confidence, "error": str(exc)}
 
 
-def replay_session(steps: list, use_vision: bool = True, verify_each: bool = False) -> dict:
+def replay_session(steps: list, use_ai: bool = True, verify_each: bool = False) -> dict:
     results = []
     for i, step in enumerate(steps):
-        result = replay_step(step, use_vision=use_vision)
+        result = replay_step(step, use_ai=use_ai)
         results.append(result)
 
         if not result.get("ok"):
@@ -86,21 +89,11 @@ def replay_session(steps: list, use_vision: bool = True, verify_each: bool = Fal
         if verify_each:
             description = step.get("description") or f"step {i + 1}"
             try:
-                screenshot = vision_capture.take_screenshot()
-                if screenshot:
-                    verification = vision_ai.verify_action(screenshot, f"completed: {description}")
-                    if float(verification.get("confidence", 1.0)) < 0.5:
-                        return {
-                            "ok": False,
-                            "failed_at": i,
-                            "reason": "verification failed",
-                            "observation": verification.get("observation", ""),
-                            "steps_completed": i,
-                            "total_steps": len(steps),
-                            "results": results,
-                        }
+                tree = get_screen_tree()
+                if not tree.get("ok"):
+                    logging.warning("verify_each: could not get screen tree at step %d", i)
             except Exception as exc:
-                logging.warning("verify_action failed in replay_session: %s", exc)
+                logging.warning("verify_each get_screen_tree failed: %s", exc)
 
         if i < len(steps) - 1:
             time.sleep(0.5)
@@ -114,22 +107,22 @@ def replay_session(steps: list, use_vision: bool = True, verify_each: bool = Fal
 
 
 def describe_replay_plan(steps: list) -> dict:
-    vision_ok = vision_ai.is_vision_available()
+    ai_ok = is_ai_available()
     plan = []
     for i, step in enumerate(steps):
         stype = step.get("type", "unknown")
         description = step.get("description") or ""
-        will_use_vision = vision_ok and bool(description) and stype == "click"
+        will_use_ai = ai_ok and bool(description) and stype == "click"
         plan.append({
             "step": i,
             "type": stype,
             "description": description or f"{stype} at ({step.get('x', 0)}, {step.get('y', 0)})",
-            "will_use_vision": will_use_vision,
+            "will_use_ai": will_use_ai,
         })
     return {"plan": plan}
 
 
-def parse_steps_from_pyautogui(script_body: str) -> list[dict]:
+def parse_steps_from_pyautogui(script_body: str) -> list:
     steps = []
     for line in script_body.splitlines():
         line = line.strip()

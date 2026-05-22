@@ -4,7 +4,7 @@ import Dashboard from "./pages/Dashboard";
 import Onboarding from "./pages/Onboarding";
 import Settings from "./pages/Settings";
 import ShareInsights from "./pages/ShareInsights";
-import ScreenInspector from "./components/ScreenInspector";
+import AccessibilityInspector from "./components/AccessibilityInspector";
 import NLBuilder from "./components/NLBuilder";
 import { sendToSidecar } from "./lib/sidecar";
 
@@ -172,7 +172,7 @@ export default function App() {
           <ShareInsights />
         )}
       </main>
-      <ScreenInspector />
+      <AccessibilityInspector />
     </div>
   );
 }

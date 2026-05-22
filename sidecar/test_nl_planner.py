@@ -6,24 +6,23 @@ from unittest.mock import patch, MagicMock
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import db
-import vision_ai
-import vision_capture
+import text_ai
+import accessibility
 import nl_planner
 
 
 def test_parse_instruction_no_vision():
-    db.set_setting("vision_backend", "")
-    db.set_setting("vision_api_key", "")
-    result = nl_planner.parse_instruction("open Discord and say hello")
+    # Ensure AI is not configured
+    with patch("nl_planner.is_ai_available", return_value=False):
+        result = nl_planner.parse_instruction("open Discord and say hello")
     assert result.get("ok") is False
     assert "error" in result
-    print("Test 1 PASS: parse_instruction returns ok=False when vision not available")
+    print("Test 1 PASS: parse_instruction returns ok=False when AI not available")
 
 
 def test_refine_plan_empty_steps_no_raise():
-    db.set_setting("vision_backend", "")
-    db.set_setting("vision_api_key", "")
-    result = nl_planner.refine_plan("open Discord", [], "add a wait step")
+    with patch("nl_planner.is_ai_available", return_value=False):
+        result = nl_planner.refine_plan("open Discord", [], "add a wait step")
     assert isinstance(result, dict)
     assert "steps" in result
     print("Test 2 PASS: refine_plan with empty steps returns valid dict without raising")
@@ -58,18 +57,25 @@ def test_saved_automation_source_is_nl_builder():
 
 
 def test_parse_instruction_returns_nl_plan_shape():
-    mock_result = {
-        "steps": [
-            {"type": "click", "description": "Click the Discord icon in taskbar"},
-            {"type": "type", "description": "Type message", "value": "hello"},
-        ],
+    mock_steps = [
+        {"type": "click", "description": "Click the Discord icon in taskbar", "x": 100, "y": 200},
+        {"type": "type", "description": "Type message", "value": "hello", "x": 0, "y": 0},
+    ]
+    mock_plan_result = {
+        "ok": True,
+        "steps": mock_steps,
         "summary": "Open Discord and send hello",
-        "estimated_steps": 2,
+    }
+    mock_tree = {
+        "ok": True,
+        "window_title": "Desktop",
+        "window_rect": {"left": 0, "top": 0, "right": 1920, "bottom": 1080},
+        "elements": [],
     }
 
-    with patch.object(vision_ai, "is_vision_available", return_value=True), \
-         patch.object(vision_capture, "take_screenshot", return_value="fakeb64=="), \
-         patch.object(vision_ai, "analyze_screen", return_value=mock_result):
+    with patch("nl_planner.is_ai_available", return_value=True), \
+         patch("nl_planner.get_screen_tree", return_value=mock_tree), \
+         patch("nl_planner.plan_automation", return_value=mock_plan_result):
         result = nl_planner.parse_instruction("open discord and say hello")
 
     assert result.get("ok") is True, f"expected ok=True, got {result}"
@@ -77,7 +83,7 @@ def test_parse_instruction_returns_nl_plan_shape():
     assert "summary" in result
     assert isinstance(result["steps"], list)
     assert len(result["steps"]) == 2
-    print("Test 5 PASS: parse_instruction returns nl_plan shape when vision mocked")
+    print("Test 5 PASS: parse_instruction returns nl_plan shape when AI mocked")
 
 
 if __name__ == "__main__":

@@ -35,3 +35,9 @@ jobs:
 
       - name: Run LLM explainer tests
         run: python sidecar/test_llm_explainer.py
+
+      - name: Run provider tests
+        run: python sidecar/test_providers.py
+
+      - name: Run accessibility tests
+        run: python sidecar/test_accessibility.py

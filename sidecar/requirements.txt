@@ -8,3 +8,5 @@ Pillow
 mss
 groq
 google-generativeai
+pywinauto
+uiautomation
