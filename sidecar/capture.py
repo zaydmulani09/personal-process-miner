@@ -9,14 +9,14 @@ from datetime import datetime, timezone
 try:
     import pygetwindow as gw
     HAS_PYGETWINDOW = True
-except ImportError:
+except Exception:
     gw = None
     HAS_PYGETWINDOW = False
 
 try:
     from pynput import keyboard, mouse
     HAS_PYNPUT = True
-except ImportError:
+except Exception:
     keyboard = None
     mouse = None
     HAS_PYNPUT = False

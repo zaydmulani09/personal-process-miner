@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 try:
     from pynput import keyboard, mouse
     HAS_PYNPUT = True
-except ImportError:
+except Exception:
     keyboard = None
     mouse = None
     HAS_PYNPUT = False
