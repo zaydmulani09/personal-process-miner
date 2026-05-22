@@ -616,10 +616,12 @@ def _handle(msg: dict) -> dict | None:
     if t == "check_ai":
         available = text_ai.is_ai_available()
         backend, _ = text_ai._get_config()
+        model = text_ai._MODELS.get(backend, "") if backend else ""
         return {
             "type": "ai_status",
             "available": available,
             "backend": backend if available else None,
+            "model": model if available else None,
             "backends": text_ai.get_available_backends(),
         }
 

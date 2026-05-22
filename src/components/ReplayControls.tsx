@@ -6,12 +6,12 @@ interface PlanItem {
   step: number;
   type: string;
   description: string;
-  will_use_vision: boolean;
+  will_use_ai: boolean;
 }
 
 interface StepResult {
   ok: boolean;
-  method: "vision" | "recorded";
+  method: "accessibility" | "recorded";
   confidence: number | null;
   error: string | null;
 }
@@ -102,9 +102,9 @@ export default function ReplayControls({ automationId, steps: initialSteps, onCl
   const [steps, setSteps] = useState<Step[]>(initialSteps);
   const [plan, setPlan] = useState<PlanItem[]>([]);
   const [stepResults, setStepResults] = useState<(StepResult | null)[]>([]);
-  const [useVision, setUseVision] = useState(true);
+  const [useAI, setUseAI] = useState(true);
   const [verifyEach, setVerifyEach] = useState(false);
-  const [visionAvailable, setVisionAvailable] = useState(false);
+  const [aiAvailable, setAIAvailable] = useState(false);
   const [running, setRunning] = useState(false);
   const [runResult, setRunResult] = useState<RunResult | null>(null);
   const [screenshotB64, setScreenshotB64] = useState<string | null>(null);
@@ -113,10 +113,10 @@ export default function ReplayControls({ automationId, steps: initialSteps, onCl
   useEffect(() => {
     const init = async () => {
       try {
-        // check vision availability
-        const vs = await sendToSidecar({ type: "check_vision" }) as { available: boolean };
-        setVisionAvailable(vs.available);
-        if (!vs.available) setUseVision(false);
+        // check AI availability
+        const vs = await sendToSidecar({ type: "check_ai" }) as { available: boolean };
+        setAIAvailable(vs.available);
+        if (!vs.available) setUseAI(false);
 
         // fetch steps if not provided
         let resolvedSteps = initialSteps;
@@ -144,7 +144,7 @@ export default function ReplayControls({ automationId, steps: initialSteps, onCl
     setRunResult(null);
     setScreenshotB64(null);
 
-    if (!useVision) {
+    if (!useAI) {
       // fallback: direct script execution via run_automation
       try {
         const resp = await sendToSidecar({ type: "run_automation", automation_id: automationId }) as { status: string; stderr: string };
@@ -159,7 +159,7 @@ export default function ReplayControls({ automationId, steps: initialSteps, onCl
       return;
     }
 
-    // vision-guided: step-by-step with real-time updates
+    // AI-guided: step-by-step with real-time updates
     const results: (StepResult | null)[] = new Array(steps.length).fill(null);
     setStepResults([...results]);
 
@@ -168,7 +168,7 @@ export default function ReplayControls({ automationId, steps: initialSteps, onCl
         const resp = await sendToSidecar({
           type: "replay_step",
           step: steps[i],
-          use_vision: useVision,
+          use_ai: useAI,
         }) as { result: StepResult };
         results[i] = resp.result;
         setStepResults([...results]);
@@ -180,7 +180,7 @@ export default function ReplayControls({ automationId, steps: initialSteps, onCl
           return;
         }
 
-        if (verifyEach && visionAvailable) {
+        if (verifyEach && aiAvailable) {
           const vResp = await sendToSidecar({
             type: "verify_action",
             expected_state: `completed: ${steps[i].description || `step ${i + 1}`}`,
@@ -299,12 +299,12 @@ export default function ReplayControls({ automationId, steps: initialSteps, onCl
                     >
                       <span style={{ color: "#64748b", width: 18, textAlign: "center" }}>{TYPE_ICONS[item.type] ?? "•"}</span>
                       <span style={{ flex: 1 }}>{item.description}</span>
-                      {item.will_use_vision && (
+                      {item.will_use_ai && (
                         <span title="AI will locate this element" style={{ fontSize: 11, color: "#3b82f6" }}>👁</span>
                       )}
                       {res && (
                         <span style={{ fontSize: 11, color: "#64748b" }}>
-                          {res.method === "vision" ? `vision ${Math.round((res.confidence ?? 0) * 100)}%` : "recorded"}
+                          {res.method === "accessibility" ? `AI ${Math.round((res.confidence ?? 0) * 100)}%` : "recorded"}
                         </span>
                       )}
                       <span>{statusIcon}</span>
@@ -328,18 +328,18 @@ export default function ReplayControls({ automationId, steps: initialSteps, onCl
             }}
           >
             <Toggle
-              label="Use AI vision to find elements"
-              checked={useVision}
-              onChange={setUseVision}
-              disabled={!visionAvailable}
-              tooltip={!visionAvailable ? "Vision not configured" : undefined}
+              label="Use AI to find elements"
+              checked={useAI}
+              onChange={setUseAI}
+              disabled={!aiAvailable}
+              tooltip={!aiAvailable ? "AI not configured" : undefined}
             />
             <Toggle
               label="Verify each step"
               checked={verifyEach}
               onChange={setVerifyEach}
-              disabled={!visionAvailable}
-              tooltip={!visionAvailable ? "Requires vision" : undefined}
+              disabled={!aiAvailable}
+              tooltip={!aiAvailable ? "Requires AI" : undefined}
             />
           </div>
 
