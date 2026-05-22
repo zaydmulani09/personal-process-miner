@@ -31,6 +31,32 @@ _TEST_IMAGE_B64 = (
 )
 
 
+def _make_1x1_jpeg() -> str:
+    try:
+        from PIL import Image
+        import io
+        buf = io.BytesIO()
+        Image.new("RGB", (1, 1), (255, 255, 255)).save(buf, format="JPEG", quality=60)
+        return base64.b64encode(buf.getvalue()).decode()
+    except Exception:
+        return _TEST_IMAGE_B64
+
+
+# 1x1 white JPEG for Gemini test_connection
+_TEST_IMAGE_JPEG_B64 = _make_1x1_jpeg()
+
+
+def _compress_for_gemini(b64_png: str) -> str:
+    from PIL import Image
+    import io
+    img_bytes = base64.b64decode(b64_png)
+    img = Image.open(io.BytesIO(img_bytes)).convert("RGB")
+    img.thumbnail((640, 640), Image.LANCZOS)
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", quality=60)
+    return base64.b64encode(buf.getvalue()).decode()
+
+
 def _strip_fences(text: str) -> str:
     text = text.strip()
     text = re.sub(r"^```(?:json)?\s*", "", text)
@@ -170,7 +196,8 @@ def _call_backend(backend: str, key: str, model: str, screenshot_b64: str, instr
         import io
         genai.configure(api_key=key)
         genai_model = genai.GenerativeModel(model)
-        img_bytes = base64.b64decode(screenshot_b64)
+        compressed_b64 = _compress_for_gemini(screenshot_b64)
+        img_bytes = base64.b64decode(compressed_b64)
         img = Image.open(io.BytesIO(img_bytes))
         response = genai_model.generate_content([instruction, img])
         return response.text
@@ -188,13 +215,15 @@ def test_connection(backend: str, api_key: str) -> dict:
     model = _MODELS.get(backend, "")
     if not model:
         return {"ok": False, "error": "invalid_api_key", "model": None}
+    test_img = _TEST_IMAGE_JPEG_B64 if backend == "gemini" else _TEST_IMAGE_B64
     try:
         _call_backend(
-            backend, api_key, model, _TEST_IMAGE_B64,
+            backend, api_key, model, test_img,
             'Describe this image in one word. Return JSON: {"description": "word"}'
         )
         return {"ok": True, "error": None, "model": model}
     except Exception as exc:
+        print(f"[vision_ai] {backend} error: {repr(exc)}", file=sys.stderr)
         err = _classify_error(exc)
         logging.debug("test_connection %s error: %s", backend, exc)
         return {"ok": False, "error": err, "model": model}
@@ -207,6 +236,7 @@ def analyze_screen(screenshot_b64: str, instruction: str) -> dict:
         raw = _call_model(screenshot_b64, instruction)
         return json.loads(_strip_fences(raw))
     except Exception as exc:
+        print(f"[vision_ai] analyze_screen error: {repr(exc)}", file=sys.stderr)
         err = _classify_error(exc)
         logging.warning("analyze_screen error: %s", exc)
         return {"ok": False, "error": err}
@@ -234,6 +264,7 @@ def find_element(screenshot_b64: str, description: str) -> dict:
         result["y"] = int(result.get("y", 0))
         return result
     except Exception as exc:
+        print(f"[vision_ai] find_element error: {repr(exc)}", file=sys.stderr)
         err = _classify_error(exc)
         logging.warning("find_element error: %s", exc)
         return {"ok": False, "error": err}
@@ -255,6 +286,7 @@ def describe_screen(screenshot_b64: str) -> dict:
         raw = _call_model(screenshot_b64, instruction)
         return json.loads(_strip_fences(raw))
     except Exception as exc:
+        print(f"[vision_ai] describe_screen error: {repr(exc)}", file=sys.stderr)
         err = _classify_error(exc)
         logging.warning("describe_screen error: %s", exc)
         return {"ok": False, "error": err}
@@ -278,6 +310,7 @@ def verify_action(screenshot_b64: str, expected_state: str) -> dict:
         raw = _call_model(screenshot_b64, instruction)
         return json.loads(_strip_fences(raw))
     except Exception as exc:
+        print(f"[vision_ai] verify_action error: {repr(exc)}", file=sys.stderr)
         err = _classify_error(exc)
         logging.warning("verify_action error: %s", exc)
         return {"ok": False, "error": err}
