@@ -5,7 +5,13 @@ import threading
 import time
 from datetime import datetime, timezone
 
-from pynput import keyboard, mouse
+try:
+    from pynput import keyboard, mouse
+    HAS_PYNPUT = True
+except ImportError:
+    keyboard = None
+    mouse = None
+    HAS_PYNPUT = False
 
 import db
 
@@ -15,8 +21,8 @@ _state: dict = {
     "buffer": [],
     "last_mouse_pos": None,
 }
-_kb_listener: keyboard.Listener | None = None
-_mouse_listener: mouse.Listener | None = None
+_kb_listener = None
+_mouse_listener = None
 
 _SIDECAR_DIR = os.path.dirname(os.path.abspath(__file__))
 _PROJECT_ROOT = os.path.dirname(_SIDECAR_DIR)
@@ -116,6 +122,9 @@ def start_recording(workflow_id: int | None) -> dict:
                 })
         except Exception:
             logging.exception("Macro recorder move error")
+
+    if not HAS_PYNPUT:
+        return {"ok": False, "error": "pynput not available — install on Windows to record"}
 
     _kb_listener = keyboard.Listener(on_press=on_press)
     _kb_listener.start()

@@ -6,15 +6,27 @@ import threading
 from ctypes import wintypes
 from datetime import datetime, timezone
 
-import pygetwindow as gw
-from pynput import keyboard, mouse
+try:
+    import pygetwindow as gw
+    HAS_PYGETWINDOW = True
+except ImportError:
+    gw = None
+    HAS_PYGETWINDOW = False
+
+try:
+    from pynput import keyboard, mouse
+    HAS_PYNPUT = True
+except ImportError:
+    keyboard = None
+    mouse = None
+    HAS_PYNPUT = False
 
 import db
 
 _MODIFIER_PREFIXES = ("Key.shift", "Key.ctrl", "Key.alt", "Key.cmd", "Key.meta")
 
-_kb_listener: keyboard.Listener | None = None
-_mouse_listener: mouse.Listener | None = None
+_kb_listener = None
+_mouse_listener = None
 _poll_thread: threading.Thread | None = None
 _stop_event = threading.Event()
 
@@ -61,6 +73,9 @@ def _window_poller() -> None:
     last_title: str | None = None
     while not _stop_event.is_set():
         try:
+            if not HAS_PYGETWINDOW:
+                _stop_event.wait(1.0)
+                continue
             win = gw.getActiveWindow()
             title = win.title if win else ""
             if title != last_title:
@@ -127,14 +142,17 @@ def start_capture() -> None:
     _poll_thread = threading.Thread(target=_window_poller, daemon=True, name="window-poller")
     _poll_thread.start()
 
-    _kb_listener = keyboard.Listener(on_press=_on_press)
-    _kb_listener.start()
+    if HAS_PYNPUT:
+        _kb_listener = keyboard.Listener(on_press=_on_press)
+        _kb_listener.start()
 
-    _mouse_listener = mouse.Listener(
-        on_click=_on_click,
-        on_move=None,  # mouse moves never stored
-    )
-    _mouse_listener.start()
+        _mouse_listener = mouse.Listener(
+            on_click=_on_click,
+            on_move=None,  # mouse moves never stored
+        )
+        _mouse_listener.start()
+    else:
+        logging.warning("pynput not available — keyboard/mouse capture disabled")
 
     logging.info("Capture started")
 
