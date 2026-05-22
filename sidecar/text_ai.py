@@ -12,7 +12,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import db
 
 _MODELS = {
-    "groq": "moonshotai/kimi-k2-instruct",
+    "groq": "llama-3.1-8b-instant",
     "claude": "claude-haiku-4-5-20251001",
     "openai": "gpt-4o-mini",
     "gemini": "gemini-2.0-flash",
