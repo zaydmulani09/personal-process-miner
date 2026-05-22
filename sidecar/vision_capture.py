@@ -6,7 +6,7 @@ import os
 try:
     import mss
     import mss.tools
-except ImportError:
+except Exception:
     mss = None
 
 
