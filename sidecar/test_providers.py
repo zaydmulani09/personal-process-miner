@@ -14,7 +14,7 @@ _SIDECAR_DIR = os.path.dirname(os.path.abspath(__file__))
 
 def _ipc(msg: dict) -> dict:
     proc = subprocess.run(
-        ["py", os.path.join(_SIDECAR_DIR, "main.py")],
+        [sys.executable, os.path.join(_SIDECAR_DIR, "main.py")],
         input=json.dumps(msg) + "\n",
         capture_output=True,
         text=True,
@@ -36,6 +36,7 @@ def test_get_available_backends():
 
 
 def test_is_vision_available_no_backend():
+    db.set_setting("ai_backend", "")
     db.set_setting("vision_backend", "")
     result = vision_ai.is_vision_available()
     assert result is False, f"expected False, got {result}"
@@ -54,38 +55,38 @@ def test_connection_invalid_key_no_raise():
 
 
 def test_set_vision_config_namespaced_key():
-    """IPC set_vision_config stores key under vision_api_key_<backend>."""
-    resp = _ipc({"type": "set_vision_config", "backend": "gemini", "api_key": "AIza-test-key-999"})
+    """IPC set_ai_config stores key under ai_api_key_<backend>."""
+    resp = _ipc({"type": "set_ai_config", "backend": "gemini", "api_key": "AIza-test-key-999"})
     assert resp.get("type") == "ok", f"expected ok, got {resp}"
 
     # Read key directly from DB to verify namespaced storage
-    stored = db.get_setting("vision_api_key_gemini", "")
+    stored = db.get_setting("ai_api_key_gemini", "")
     assert stored == "AIza-test-key-999", f"expected 'AIza-test-key-999', got '{stored}'"
 
-    backend = db.get_setting("vision_backend", "")
+    backend = db.get_setting("ai_backend", "")
     assert backend == "gemini", f"expected 'gemini', got '{backend}'"
 
     # Cleanup
-    _ipc({"type": "set_vision_config", "backend": "", "api_key": ""})
-    print("Test 4 PASS: set_vision_config stores key under namespaced key (vision_api_key_gemini)")
+    _ipc({"type": "set_ai_config", "backend": "", "api_key": ""})
+    print("Test 4 PASS: set_ai_config stores key under namespaced key (ai_api_key_gemini)")
 
 
 def test_switching_backend_updates_check_vision():
-    """Switching active backend updates check_vision response correctly."""
-    _ipc({"type": "set_vision_config", "backend": "openai", "api_key": "sk-test-openai-456"})
-    resp = _ipc({"type": "check_vision"})
-    assert resp.get("type") == "vision_status"
+    """Switching active backend updates check_ai response correctly."""
+    _ipc({"type": "set_ai_config", "backend": "openai", "api_key": "sk-test-openai-456"})
+    resp = _ipc({"type": "check_ai"})
+    assert resp.get("type") == "ai_status"
     assert resp.get("backend") == "openai", f"expected openai, got {resp.get('backend')}"
-    assert "backends" in resp, "backends list missing from check_vision response"
+    assert "backends" in resp, "backends list missing from check_ai response"
     assert set(resp["backends"]) == {"claude", "openai", "groq", "gemini", "grok"}
 
-    _ipc({"type": "set_vision_config", "backend": "groq", "api_key": "gsk-test-groq-789"})
-    resp2 = _ipc({"type": "check_vision"})
+    _ipc({"type": "set_ai_config", "backend": "groq", "api_key": "gsk-test-groq-789"})
+    resp2 = _ipc({"type": "check_ai"})
     assert resp2.get("backend") == "groq", f"expected groq, got {resp2.get('backend')}"
 
     # Cleanup
-    _ipc({"type": "set_vision_config", "backend": "", "api_key": ""})
-    print("Test 5 PASS: switching active backend updates check_vision response correctly")
+    _ipc({"type": "set_ai_config", "backend": "", "api_key": ""})
+    print("Test 5 PASS: switching active backend updates check_ai response correctly")
 
 
 def test_all_error_types_handled_without_raising():
