@@ -214,10 +214,36 @@ def execute_action(action: dict) -> dict:
 
     try:
         if atype == "focus_window":
-            app = Application(backend="uia").connect(title_re=window_title or ".*")
-            win = app.top_window()
-            win.set_focus()
-            return {"ok": True, "error": None, "method": "uia"}
+            _AUTOLAUNCH = {
+                "notepad": "notepad.exe",
+                "calc": "calc.exe",
+                "calculator": "calc.exe",
+                "paint": "mspaint.exe",
+                "mspaint": "mspaint.exe",
+            }
+            pattern = window_title or ".*"
+            try:
+                app = Application(backend="uia").connect(title_re=pattern)
+                win = app.top_window()
+                win.set_focus()
+                return {"ok": True, "error": None, "method": "uia"}
+            except Exception:
+                # Try auto-launch for known simple apps
+                import subprocess as _sp
+                import time as _time
+                lower_title = (window_title or "").lower()
+                exe = next((v for k, v in _AUTOLAUNCH.items() if k in lower_title), None)
+                if exe:
+                    try:
+                        _sp.Popen([exe])
+                        _time.sleep(1.5)
+                        app = Application(backend="uia").connect(title_re=pattern)
+                        win = app.top_window()
+                        win.set_focus()
+                        return {"ok": True, "error": None, "method": "launched"}
+                    except Exception as launch_exc:
+                        return {"ok": False, "error": f"auto-launch failed: {launch_exc}", "method": "uia"}
+                raise  # re-raise original for non-autolaunch apps
 
         # Connect to window
         if window_title:

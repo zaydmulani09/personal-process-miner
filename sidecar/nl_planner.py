@@ -78,7 +78,9 @@ def execute_instruction(instruction: str) -> dict:
             # Re-read live tree before every step
             get_window_tree()
 
+            print(f"[execute] step {i}: {step}", file=sys.stderr, flush=True)
             result = execute_action(step)
+            print(f"[execute] result: {result}", file=sys.stderr, flush=True)
 
             if not result.get("ok") and "element not found" in (result.get("error") or ""):
                 # One corrective retry: ask AI for alternative action
@@ -97,6 +99,7 @@ def execute_instruction(instruction: str) -> dict:
                         if isinstance(corrective, list):
                             corrective = corrective[0] if corrective else step
                         result = execute_action(corrective)
+                        print(f"[execute] corrective result: {result}", file=sys.stderr, flush=True)
                 except Exception as corr_exc:
                     logging.warning("corrective action failed: %s", corr_exc)
 
@@ -109,6 +112,7 @@ def execute_instruction(instruction: str) -> dict:
                     "total": len(steps),
                     "results": results,
                     "error": result.get("error"),
+                    "failed_step": step,
                 }
 
             if i < len(steps) - 1:

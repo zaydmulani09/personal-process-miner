@@ -116,7 +116,9 @@ export default function NLBuilder({ onNavigate }: Props) {
       if (r.ok) {
         setExecResult({ ok: true, message: `Completed ${r.steps_completed} of ${r.total} steps` });
       } else {
-        setExecResult({ ok: false, message: r.error || `Failed at step ${r.steps_completed + 1}` });
+        const stepNum = (r.steps_completed ?? 0) + 1;
+        const errMsg = r.error ? `step ${stepNum}: ${r.error}` : `step ${stepNum}`;
+        setExecResult({ ok: false, message: `Failed at ${errMsg}` });
       }
     } catch (e: unknown) {
       setExecResult({ ok: false, message: e instanceof Error ? e.message : String(e) });
@@ -355,7 +357,9 @@ export default function NLBuilder({ onNavigate }: Props) {
                     }}
                   />
                 ) : (
-                  <span style={{ flex: 1, color: "#334155" }}>{step.description}</span>
+                  <span style={{ flex: 1, color: "#334155" }}>
+                    {(step as Record<string, unknown>).reason as string || step.description || (step as Record<string, unknown>).action as string || step.type}
+                  </span>
                 )}
 
                 {step.value && editingIdx !== i && (
@@ -365,7 +369,7 @@ export default function NLBuilder({ onNavigate }: Props) {
                 )}
 
                 <button
-                  onClick={() => { setEditingIdx(i); setEditValue(step.description); }}
+                  onClick={() => { setEditingIdx(i); setEditValue((step as Record<string, unknown>).reason as string || step.description || ""); }}
                   title="Edit step"
                   style={{ background: "none", border: "none", cursor: "pointer", fontSize: 13, color: "#94a3b8", padding: "0 2px" }}
                 >
