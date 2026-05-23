@@ -151,7 +151,7 @@ export default function Settings({ onNavigate }: Props) {
     }
   };
 
-  const deactivateVision = async () => {
+  const deactivateAI = async () => {
     setDeactivating(true);
     try {
       await sendToSidecar({ type: "deactivate_ai" });
@@ -458,7 +458,7 @@ export default function Settings({ onNavigate }: Props) {
           </span>
           {activeProvider && (
             <button
-              onClick={deactivateVision}
+              onClick={deactivateAI}
               disabled={deactivating}
               style={{
                 padding: "3px 10px", fontSize: 12, borderRadius: 5,

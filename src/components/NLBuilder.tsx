@@ -30,15 +30,15 @@ export default function NLBuilder({ onNavigate }: Props) {
   const [editValue, setEditValue] = useState("");
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
-  const [visionOk, setVisionOk] = useState<boolean | null>(null);
+  const [aiOk, setAiOk] = useState<boolean | null>(null);
   const [showReplay, setShowReplay] = useState(false);
   const [savedId, setSavedId] = useState<number | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
-    sendToSidecar({ type: "check_vision" })
-      .then((r) => setVisionOk((r as { available: boolean }).available))
-      .catch(() => setVisionOk(false));
+    sendToSidecar({ type: "check_ai" })
+      .then((r) => setAiOk((r as { available: boolean }).available))
+      .catch(() => setAiOk(false));
   }, []);
 
   const build = async () => {
@@ -154,8 +154,8 @@ export default function NLBuilder({ onNavigate }: Props) {
         </p>
       </div>
 
-      {/* Vision not configured banner */}
-      {visionOk === false && (
+      {/* AI not configured banner */}
+      {aiOk === false && (
         <div
           style={{
             padding: "12px 16px",
@@ -172,8 +172,8 @@ export default function NLBuilder({ onNavigate }: Props) {
           }}
         >
           <span>
-            ⚠ AI Vision is not configured. Go to{" "}
-            <strong>Settings → AI Vision</strong> to add an API key.
+            ⚠ AI Assistant is not configured. Go to{" "}
+            <strong>Settings → AI Assistant</strong> to add an API key.
           </span>
           <button
             onClick={() => onNavigate("settings")}
@@ -226,12 +226,12 @@ export default function NLBuilder({ onNavigate }: Props) {
 
         <button
           onClick={build}
-          disabled={loading || !instruction.trim() || visionOk === false}
+          disabled={loading || !instruction.trim() || aiOk === false}
           style={{
             ...btnBase,
-            background: loading || !instruction.trim() || visionOk === false ? "#94a3b8" : "#8b5cf6",
+            background: loading || !instruction.trim() || aiOk === false ? "#94a3b8" : "#8b5cf6",
             color: "#fff",
-            cursor: loading || !instruction.trim() || visionOk === false ? "not-allowed" : "pointer",
+            cursor: loading || !instruction.trim() || aiOk === false ? "not-allowed" : "pointer",
             display: "flex",
             alignItems: "center",
             gap: 8,
@@ -403,7 +403,7 @@ export default function NLBuilder({ onNavigate }: Props) {
               />
               <button
                 onClick={refine}
-                disabled={refining || !refineInput.trim() || visionOk === false}
+                disabled={refining || !refineInput.trim() || aiOk === false}
                 style={{
                   ...btnBase,
                   padding: "7px 14px",
