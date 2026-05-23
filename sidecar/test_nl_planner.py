@@ -57,25 +57,20 @@ def test_saved_automation_source_is_nl_builder():
 
 
 def test_parse_instruction_returns_nl_plan_shape():
+    import json as _json
     mock_steps = [
-        {"type": "click", "description": "Click the Discord icon in taskbar", "x": 100, "y": 200},
-        {"type": "type", "description": "Type message", "value": "hello", "x": 0, "y": 0},
+        {"action": "focus_window", "target": {"name": "", "control_type": "", "automation_id": "", "window_title_contains": "Discord"}, "value": "", "key": "", "reason": "Focus Discord"},
+        {"action": "type", "target": {"name": "message box", "control_type": "Edit", "automation_id": "", "window_title_contains": "Discord"}, "value": "hello", "key": "", "reason": "Type hello"},
     ]
-    mock_plan_result = {
-        "ok": True,
-        "steps": mock_steps,
-        "summary": "Open Discord and send hello",
-    }
     mock_tree = {
         "ok": True,
         "window_title": "Desktop",
-        "window_rect": {"left": 0, "top": 0, "right": 1920, "bottom": 1080},
         "elements": [],
     }
 
     with patch("nl_planner.is_ai_available", return_value=True), \
-         patch("nl_planner.get_screen_tree", return_value=mock_tree), \
-         patch("nl_planner.plan_automation", return_value=mock_plan_result):
+         patch("nl_planner.get_window_tree", return_value=mock_tree), \
+         patch("nl_planner._call_ai", return_value=_json.dumps(mock_steps)):
         result = nl_planner.parse_instruction("open discord and say hello")
 
     assert result.get("ok") is True, f"expected ok=True, got {result}"

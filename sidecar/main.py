@@ -543,6 +543,13 @@ def _handle(msg: dict) -> dict | None:
             return {"type": "error", "message": result.get("error", "parse failed")}
         return {"type": "nl_plan", "steps": result["steps"], "summary": result.get("summary", "")}
 
+    if t == "execute_nl_instruction":
+        instruction, err = _validate(msg.get("instruction", ""), str)
+        if err:
+            return {"type": "error", "message": f"instruction: {err}"}
+        result = nl_planner.execute_instruction(instruction)
+        return {"type": "execution_result", "result": result}
+
     if t == "refine_nl_plan":
         instruction, _ = _validate(msg.get("instruction", ""), str, required=False)
         instruction = instruction or ""
@@ -606,7 +613,18 @@ def _handle(msg: dict) -> dict | None:
         automation = db.get_automation_by_id(automation_id)
         if automation is None:
             return {"type": "error", "message": "automation not found"}
-        steps = vision_replay.parse_steps_from_pyautogui(automation.get("script_body", ""))
+        script_type = automation.get("script_type", "pyautogui")
+        script_body = automation.get("script_body", "")
+        if script_type == "nl_builder":
+            try:
+                import json as _json
+                steps = _json.loads(script_body) if script_body else []
+                if not isinstance(steps, list):
+                    steps = []
+            except Exception:
+                steps = []
+        else:
+            steps = vision_replay.parse_steps_from_pyautogui(script_body)
         return {"type": "automation_steps", "steps": steps}
 
     if t == "deactivate_ai":

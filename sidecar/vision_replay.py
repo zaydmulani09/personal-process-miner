@@ -5,7 +5,7 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from accessibility import get_screen_tree, find_element_by_description
+from accessibility import get_screen_tree, find_element_by_description, execute_action
 from text_ai import is_ai_available
 
 try:
@@ -21,59 +21,57 @@ except Exception:
 _SKIP_TYPES = {"window", "unknown", "wait", "comment"}
 
 
+def _step_to_action(step: dict) -> dict:
+    """Convert legacy step format to execute_action schema."""
+    stype = (step.get("type") or "").strip().lower()
+    description = step.get("description") or ""
+    value = step.get("value") or ""
+    key = step.get("key") or value or ""
+
+    target = {
+        "name": description,
+        "control_type": "",
+        "automation_id": "",
+        "window_title_contains": "",
+    }
+
+    if stype == "click":
+        return {"action": "click", "target": target, "value": "", "key": "", "reason": description}
+    if stype == "type":
+        return {"action": "type", "target": target, "value": value, "key": "", "reason": description}
+    if stype in ("keypress", "hotkey", "key"):
+        return {"action": "keypress", "target": target, "value": "", "key": key, "reason": description}
+    if stype == "scroll":
+        return {"action": "scroll", "target": target, "value": value or "3", "key": "", "reason": description}
+    return {"action": stype, "target": target, "value": value, "key": key, "reason": description}
+
+
 def _execute_step(step: dict, x: int, y: int) -> dict:
     """
-    Execute one step using pyautogui.
+    Execute one step via execute_action (UIA-native).
+    Falls back to raw pyautogui click if UIA element not found and coordinates available.
     Returns {"ok": bool, "skipped": bool, "error": str|None}
     Never raises.
     """
-    if not _PYAUTOGUI_OK:
-        return {"ok": False, "skipped": False, "error": "pyautogui not available"}
-
     stype = (step.get("type") or "").strip().lower()
 
-    # Gracefully skip unexecutable step types
     if stype in _SKIP_TYPES or not stype:
         return {"ok": True, "skipped": True, "error": None}
 
-    try:
-        if stype == "click":
-            if x or y:
-                pyautogui.click(x, y)
+    action = _step_to_action(step)
+    result = execute_action(action)
 
-        elif stype == "type":
-            if x and y:
-                pyautogui.click(x, y)
-            value = step.get("value", "") or ""
-            if value:
-                pyautogui.write(value, interval=0.05)
+    if not result.get("ok") and (x or y) and stype == "click" and _PYAUTOGUI_OK:
+        try:
+            pyautogui.click(x, y)
+            return {"ok": True, "skipped": False, "error": None}
+        except Exception as exc:
+            return {"ok": False, "skipped": False, "error": str(exc)}
 
-        elif stype in ("keypress", "hotkey", "key"):
-            key = (step.get("key") or step.get("value") or "").strip()
-            if key:
-                if "+" in key:
-                    # Combo like Ctrl+Shift+T or win+up
-                    parts = [p.strip().lower() for p in key.split("+") if p.strip()]
-                    pyautogui.hotkey(*parts)
-                else:
-                    pyautogui.press(key.lower())
+    if result.get("method") == "skipped":
+        return {"ok": True, "skipped": True, "error": None}
 
-        elif stype == "scroll":
-            try:
-                amount = int(step.get("value") or step.get("clicks") or 3)
-            except (ValueError, TypeError):
-                amount = 3
-            pyautogui.scroll(amount, x=x or None, y=y or None)
-
-        else:
-            # Unknown type — skip gracefully rather than fail
-            return {"ok": True, "skipped": True, "error": None}
-
-        return {"ok": True, "skipped": False, "error": None}
-
-    except Exception as exc:
-        logging.warning("_execute_step failed (type=%s): %s", stype, exc)
-        return {"ok": False, "skipped": False, "error": str(exc)}
+    return {"ok": result.get("ok", False), "skipped": False, "error": result.get("error")}
 
 
 def replay_step(step: dict, use_ai: bool = True) -> dict:

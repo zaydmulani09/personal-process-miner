@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { sendToSidecar } from "../lib/sidecar";
 import { Step } from "../lib/types";
-import ReplayControls from "./ReplayControls";
 
 const TYPE_ICONS: Record<string, string> = {
   click: "🖱",
@@ -31,8 +30,9 @@ export default function NLBuilder({ onNavigate }: Props) {
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [aiOk, setAiOk] = useState<boolean | null>(null);
-  const [showReplay, setShowReplay] = useState(false);
-  const [savedId, setSavedId] = useState<number | null>(null);
+  const [executing, setExecuting] = useState(false);
+  const [execProgress, setExecProgress] = useState<string | null>(null);
+  const [execResult, setExecResult] = useState<{ ok: boolean; message: string } | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
@@ -102,6 +102,30 @@ export default function NLBuilder({ onNavigate }: Props) {
     setPlan((prev) => (prev ?? []).filter((_, i) => i !== idx));
   };
 
+  const runNow = async () => {
+    if (!instruction.trim()) return;
+    setExecuting(true);
+    setExecResult(null);
+    setExecProgress("Executing...");
+    try {
+      const resp = await sendToSidecar({
+        type: "execute_nl_instruction",
+        instruction: instruction.trim(),
+      }) as { result: { ok: boolean; steps_completed: number; total: number; error?: string } };
+      const r = resp.result;
+      if (r.ok) {
+        setExecResult({ ok: true, message: `Completed ${r.steps_completed} of ${r.total} steps` });
+      } else {
+        setExecResult({ ok: false, message: r.error || `Failed at step ${r.steps_completed + 1}` });
+      }
+    } catch (e: unknown) {
+      setExecResult({ ok: false, message: e instanceof Error ? e.message : String(e) });
+    } finally {
+      setExecuting(false);
+      setExecProgress(null);
+    }
+  };
+
   const save = async () => {
     if (!plan || plan.length === 0) return;
     setSaving(true);
@@ -112,7 +136,7 @@ export default function NLBuilder({ onNavigate }: Props) {
         steps: plan,
         summary,
       }) as { id: number };
-      setSavedId(resp.id);
+      void resp.id;
       setToast("✓ Automation saved!");
       setTimeout(() => {
         setToast(null);
@@ -417,19 +441,55 @@ export default function NLBuilder({ onNavigate }: Props) {
             </div>
           </div>
 
-          {/* Action buttons */}
-          <div style={{ display: "flex", gap: 10 }}>
-            <button
-              onClick={() => setShowReplay(true)}
-              disabled={plan.length === 0}
+          {/* Execution result */}
+          {execResult && (
+            <div
               style={{
-                ...btnBase,
-                background: plan.length === 0 ? "#94a3b8" : "#3b82f6",
-                color: "#fff",
-                cursor: plan.length === 0 ? "not-allowed" : "pointer",
+                padding: "10px 14px",
+                borderRadius: 7,
+                marginBottom: 12,
+                fontSize: 13,
+                fontWeight: 500,
+                background: execResult.ok ? "#d1fae5" : "#fee2e2",
+                color: execResult.ok ? "#065f46" : "#991b1b",
+                border: `1px solid ${execResult.ok ? "#6ee7b7" : "#fca5a5"}`,
               }}
             >
-              ▶ Run Now
+              {execResult.ok ? `✓ ${execResult.message}` : `✗ ${execResult.message}`}
+            </div>
+          )}
+
+          {/* Action buttons */}
+          <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+            <button
+              onClick={runNow}
+              disabled={executing || !instruction.trim()}
+              style={{
+                ...btnBase,
+                background: executing || !instruction.trim() ? "#94a3b8" : "#3b82f6",
+                color: "#fff",
+                cursor: executing || !instruction.trim() ? "not-allowed" : "pointer",
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+              }}
+            >
+              {executing ? (
+                <>
+                  <span
+                    style={{
+                      display: "inline-block",
+                      width: 12,
+                      height: 12,
+                      border: "2px solid rgba(255,255,255,0.3)",
+                      borderTopColor: "#fff",
+                      borderRadius: "50%",
+                      animation: "spin 0.7s linear infinite",
+                    }}
+                  />
+                  {execProgress ?? "Executing..."}
+                </>
+              ) : "▶ Run Now"}
             </button>
             <button
               onClick={save}
@@ -467,15 +527,6 @@ export default function NLBuilder({ onNavigate }: Props) {
         >
           {toast}
         </div>
-      )}
-
-      {/* ReplayControls modal */}
-      {showReplay && plan && (
-        <ReplayControls
-          automationId={savedId ?? -1}
-          steps={plan}
-          onClose={() => setShowReplay(false)}
-        />
       )}
 
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
